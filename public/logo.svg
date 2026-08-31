@@ -1,0 +1,15 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+  <circle cx="256" cy="256" r="256" fill="#FF9100"/>
+  <!-- Route trace path -->
+  <path 
+    d="M 148 140 H 370 C 418 140 418 256 370 256 H 142 C 94 256 94 372 142 372 H 364" 
+    stroke="#FFFFFF" 
+    stroke-width="48" 
+    stroke-linecap="round" 
+    stroke-linejoin="round"
+  />
+  <!-- Top Left Terminal Node -->
+  <circle cx="148" cy="140" r="42" fill="#FF9100" stroke="#FFFFFF" stroke-width="24"/>
+  <!-- Bottom Right Terminal Node -->
+  <circle cx="364" cy="372" r="42" fill="#FF9100" stroke="#FFFFFF" stroke-width="24"/>
+</svg>
