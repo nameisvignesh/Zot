@@ -410,35 +410,6 @@ Latency and cost information are recorded for analytics.
 
 ---
 
-# 🖼️ Demo
-
-Add project screenshots under:
-
-```text
-docs/
-└── screenshots/
-    ├── dashboard.png
-    ├── routing.png
-    ├── node-graph.png
-    ├── playground.png
-    ├── refinement.png
-    └── analytics.png
-```
-
-Then embed them:
-
-```md
-![Zot Dashboard](docs/screenshots/dashboard.png)
-
-![Zot Routing](docs/screenshots/routing.png)
-
-![Zot Node Graph](docs/screenshots/node-graph.png)
-```
-
-> 🎥 Live demo coming soon.
-
----
-
 # 🚀 Quick Start
 
 ## Prerequisites
