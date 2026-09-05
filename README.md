@@ -814,3 +814,27 @@ See [`LICENSE`](LICENSE) for details.
 ⭐ **Star the repository if Zot saves you tokens.**
 
 </div>
+
+---
+
+<div align="center">
+
+## ☕ Support Zot
+
+If Zot is useful to you, consider buying me a coffee.
+
+<a href="https://buymeacoffee.com/nameisvignesh" target="_blank">
+  <img
+    src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
+    alt="Buy Me a Coffee"
+    height="60"
+  />
+</a>
+
+<br><br>
+
+*Your support helps fund new features, model integrations, research, and continued development.*
+
+</div>
+
+---
