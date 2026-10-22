@@ -51,3 +51,6 @@ Thumbs.db
 .vite/
 .eslintcache
 
+# Downloaded local Hugging Face checkpoint (large external repository)
+LFM2.5-230M/
+

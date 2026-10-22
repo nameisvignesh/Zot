@@ -63,7 +63,32 @@ export const APP_THEMES: AppTheme[] = [
   }
 ];
 
+export const LOCAL_LFM_MODEL: Model = {
+  id: 'lfm-2-5-230m',
+  name: 'LFM 2.5-230M',
+  provider: 'Liquid AI · Local',
+  type: 'local',
+  tier: 'free',
+  is_builtin: true,
+  endpoint: 'local://LFM2.5-230M',
+  context_length: 32768,
+  input_cost_per_1k: 0,
+  output_cost_per_1k: 0,
+  is_free: true,
+  free_tier_limits: 'Offline local model',
+  enabled: true,
+  priority: 1,
+  status: 'ready',
+  latency_ms_avg: 220,
+  tokens_per_sec: 90,
+  description: 'Offline Liquid AI LFM 2.5-230M checkpoint installed in the project workspace.',
+  device: 'auto (CUDA · Metal · CPU)',
+  docs_url: 'https://huggingface.co/LiquidAI/LFM2.5-230M',
+  created_at: '2026-10-22T00:00:00Z'
+};
+
 export const INITIAL_MODELS: Model[] = [
+  LOCAL_LFM_MODEL,
   {
     id: 'lfm-local',
     name: 'Liquid AI LFM 7B (Zero-Shot Core)',
@@ -727,8 +752,9 @@ export const SAMPLE_PROMPTS: SamplePrompt[] = [
 ];
 
 export const DEFAULT_SETTINGS: ZotSettings = {
+  language: 'en',
   theme: 'amber-zero',
-  default_model: 'lfm-local',
+  default_model: 'lfm-2-5-230m',
   model_device: 'auto',
   generation_defaults: {
     temperature: 0.7,
@@ -800,8 +826,8 @@ export const INITIAL_REQUEST_HISTORY: RequestRecord[] = [
     id: 'req_01JZOT772B10',
     timestamp: '2026-08-30T22:15:40Z',
     user_id: 'user_clerk_01',
-    model_id: 'llama-3-8b-local',
-    model_name: 'Llama 3 8B Instruct (Ollama)',
+    model_id: 'meta-llama-3-1-8b',
+    model_name: 'Meta Llama 3.1 8B Instruct (Ollama)',
     task_type: 'Coding',
     original_prompt: 'Create a Python function that accepts a list of integers and returns only the even numbers. Do not use NumPy.',
     refined_prompt: 'Create a Python function that accepts a list of integers and returns only even numbers. Do not use NumPy.',
@@ -826,7 +852,7 @@ export const INITIAL_REQUEST_HISTORY: RequestRecord[] = [
       task: 'Coding',
       task_confidence: 0.95,
       complexity: 0.42,
-      selected_model: 'llama-3-8b-local',
+      selected_model: 'meta-llama-3-1-8b',
       alternative_models: ['lfm-local', 'gemini-1-5-flash-free'],
       reason: 'Free Local Coding Engine (Python with negative constraint)',
       estimated_cost: 0.0,

@@ -195,133 +195,77 @@ export function refinePrompt(
     politenessRemoved += 6;
   }
 
-  // Handle specific pizza / cooking questions
-  if (/pizza/i.test(text) && /how\s+to\s+make/i.test(text)) {
-    if (version === '1.0') {
-      text = 'Tell me how to make a pizza in simple steps. Please provide an example.';
-      politenessRemoved += 12;
-    } else if (version === '1.1') {
-      text = 'Describe how to make pizza in simple steps with an example.';
-      politenessRemoved += 16;
-    } else if (version === '2.0') {
-      text = 'Explain how to make pizza in simple steps with an example.';
-      politenessRemoved += 18;
-    } else if (version === '3.0') {
-      text = 'Explain pizza recipe step-by-step with an example.';
-      politenessRemoved += 22;
-    } else if (version === '3.1') {
-      text = 'Step-by-step pizza recipe with an example.';
-      politenessRemoved += 24;
-    }
-  } 
-  // Handle Leave / Vacation letter prompts
-  else if (/leave\s+application|request\s+three\s+days\s+of\s+leave|short\s+vacation/i.test(text)) {
-    if (version === '1.0') {
-      // Conservative: Clean pleasantry removal without duplicating words
-      text = text
-        .replace(/I\s+hope\s+you\s+are\s+doing\s+well[:\s,]*/gi, '')
-        .replace(/I\s+hope\s+this\s+email\s+finds\s+you\s+well[:\s,]*/gi, '')
-        .replace(/Thank\s+you\s+for\s+your\s+understanding[.\s,]*/gi, '')
-        .trim();
-      politenessRemoved += 12;
-    } else if (version === '1.1') {
-      // Redundancy Removal: Clean syntactic compression
-      text = text
-        .replace(/I\s+hope\s+you\s+are\s+doing\s+well[:\s,]*/gi, '')
-        .replace(/I\s+am\s+writing\s+to\s+request/gi, 'Requesting')
-        .replace(/as\s+I\s+have\s+planned\s+a\s+short\s+vacation\s+with\s+my\s+family\s+during\s+that\s+time/gi, 'for family vacation')
-        .replace(/so\s+that\s+nothing\s+gets\s+delayed\s+in\s+my\s+absence/gi, 'to prevent delays')
-        .replace(/I\s+would\s+really\s+appreciate\s+it\s+if\s+you\s+could\s+approve\s+my\s+leave\s+request[.\s,]*/gi, 'Please approve my leave request.')
-        .replace(/Thank\s+you\s+for\s+your\s+understanding[.\s,]*/gi, '')
-        .trim();
-      politenessRemoved += 28;
-    } else if (version === '2.0') {
-      // Balanced: Clean professional compact request preserving variables
-      text = 'Subject: Leave Application (3 Days: [start date] to [end date])\n\nRequesting 3 days leave from [start date] to [end date] for family vacation. Pending tasks will be completed and urgent work handed to [colleague\'s name]. Reachable by phone or email. Please approve my leave request.';
-      politenessRemoved += 45;
-    } else if (version === '3.0') {
-      // Aggressive: High density imperative summary
-      text = 'Leave request (3 days: [start date] to [end date]) for family vacation. Handing urgent tasks to [colleague\'s name]; reachable via phone/email.';
-      politenessRemoved += 65;
-    } else if (version === '3.1') {
-      // Context-Aware
-      text = 'Leave Application: [start date] to [end date] (3 days) for vacation. Work assigned to [colleague\'s name]; available on phone/email.';
-      politenessRemoved += 68;
-    }
-  } 
-  else {
-    // General Politeness and redundant starter removal
-    const politeStarters = [
-      /^(?:hey|hello|hi|good\s+morning|good\s+afternoon|good\s+evening)[,\s]+/i,
-      /^(?:can\s+you\s+please|could\s+you\s+please|would\s+you\s+mind|please\s+kindly|i\s+would\s+like\s+you\s+to|i\s+need\s+you\s+to|can\s+you|could\s+you|please)\s+/i,
-      /^(?:i\s+am\s+wondering\s+if\s+you\s+could|i\s+was\s+hoping\s+you\s+could|i\s+would\s+be\s+very\s+grateful\s+if\s+you\s+could)\s+/i,
-      /\b(?:please\s+and\s+thank\s+you|thank\s+you\s+very\s+much|thanks\s+in\s+advance|thanks)[,\.\!]*$/i,
-      /\b(?:as\s+detailed\s+as\s+possible|in\s+great\s+detail\s+so\s+that\s+i\s+can\s+understand)\b/i,
-      /\b(?:so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily)\b/i,
-      /\b(?:i\s+am\s+fine(?: so)? how are you(?: now)?\??)\b/i,
-      /\b(?:hope\s+you\s+are\s+doing\s+well|hope\s+this\s+finds\s+you\s+well)[,\.:]*\s*/i,
-      /\b(?:if\s+you\s+have\s+knowledge|if\s+you\s+know|if\s+possible)[,\.\s]*/gi,
-      /\b(?:just\s+tell\s+me\s+how\??|can\s+you\s+tell\s+me\s+how\??)[,\.\s]*/gi
-    ];
+  // General Politeness and redundant starter removal
+  const politeStarters = [
+    /^(?:hey|hello|hi|good\s+morning|good\s+afternoon|good\s+evening)[,\s]+/i,
+    /^(?:can\s+you\s+please|could\s+you\s+please|would\s+you\s+mind|please\s+kindly|i\s+would\s+like\s+you\s+to|i\s+need\s+you\s+to|can\s+you|could\s+you|please)\s+/i,
+    /^(?:i\s+am\s+wondering\s+if\s+you\s+could|i\s+was\s+hoping\s+you\s+could|i\s+would\s+be\s+very\s+grateful\s+if\s+you\s+could)\s+/i,
+    /\b(?:please\s+and\s+thank\s+you|thank\s+you\s+very\s+much|thanks\s+in\s+advance|thanks)[,\.\!]*$/i,
+    /\b(?:as\s+detailed\s+as\s+possible|in\s+great\s+detail\s+so\s+that\s+i\s+can\s+understand)\b/i,
+    /\b(?:so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily)\b/i,
+    /\b(?:i\s+am\s+fine(?: so)? how are you(?: now)?\??)\b/i,
+    /\b(?:hope\s+you\s+are\s+doing\s+well|hope\s+this\s+finds\s+you\s+well)[,\.:]*\s*/i,
+    /\b(?:if\s+you\s+have\s+knowledge|if\s+you\s+know|if\s+possible)[,\.\s]*/gi,
+    /\b(?:just\s+tell\s+me\s+how\??|can\s+you\s+tell\s+me\s+how\??)[,\.\s]*/gi
+  ];
 
-    for (const pattern of politeStarters) {
-      if (pattern.test(text)) {
-        politenessRemoved += 3;
-        text = text.replace(pattern, (match) => {
-          if (/explain/i.test(match)) return 'Explain ';
-          if (/provide/i.test(match)) return 'Provide ';
-          if (/write|create/i.test(match)) return 'Create ';
-          return '';
-        });
-      }
+  for (const pattern of politeStarters) {
+    if (pattern.test(text)) {
+      politenessRemoved += 3;
+      text = text.replace(pattern, (match) => {
+        if (/explain/i.test(match)) return 'Explain ';
+        if (/provide/i.test(match)) return 'Provide ';
+        if (/write|create/i.test(match)) return 'Create ';
+        return '';
+      });
     }
+  }
 
-    // Version-specific transforms
-    if (version === '1.0') {
-      text = text
-        .replace(/^(?:hello|hi|hey)[,\s]+/i, '')
-        .replace(/(?:thanks|thank you)[\.\!]*$/i, '')
-        .replace(/\b(?:i am fine so how are you now)\b/gi, 'how are you')
-        .trim();
-    } 
-    else if (version === '1.1') {
-      text = text
-        .replace(/\b(?:detailed\s+explanation\s+about\s+how)\b/gi, 'how')
-        .replace(/\b(?:in\s+order\s+to)\b/gi, 'to')
-        .replace(/\b(?:at\s+the\s+present\s+time)\b/gi, 'now')
-        .replace(/\b(?:due\s+to\s+the\s+fact\s+that)\b/gi, 'because')
-        .replace(/\b(?:make\s+sure\s+to\s+note\s+that)\b/gi, 'note:')
-        .replace(/\b(?:give\s+me\s+a\s+list\s+of)\b/gi, 'list')
-        .replace(/\b(?:help\s+me\s+write)\b/gi, 'write')
-        .replace(/\b(?:tell\s+me\s+about)\b/gi, 'describe')
-        .replace(/\b(?:please\s+provide\s+me\s+also\s+an\s+example)\b/gi, 'Provide an example.')
-        .trim();
-    } 
-    else if (version === '2.0') {
-      text = text
-        .replace(/provide\s+me\s+with\s+a\s+detailed\s+explanation\s+about\s+how/i, 'explain how')
-        .replace(/provide\s+a\s+detailed\s+explanation\s+about\s+how/i, 'explain how')
-        .replace(/and\s+i\s+would\s+like\s+you\s+to\s+explain\s+it\s+in\s+simple\s+terms\s+so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily\??/i, 'in simple terms for a beginner.')
-        .replace(/so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily\??/i, 'for a beginner.')
-        .replace(/\b(?:and\s+returns\s+only\s+the\s+even\s+numbers)\b/gi, 'and returns only even numbers')
-        .replace(/\b(?:i\s+want\s+you\s+to\s+act\s+as\s+a)\b/gi, 'act as a')
-        .replace(/\b(?:make\s+sure\s+that\s+you)\b/gi, '')
-        .replace(/\b(?:step\s+by\s+step\s+in\s+detail)\b/gi, 'step-by-step')
-        .replace(/\b(?:can\s+you\s+tell\s+me\s+what\s+is)\b/gi, 'what is')
-        .replace(/\b(?:please\s+provide\s+me\s+also\s+an\s+example\??)\b/gi, 'with an example.')
-        .trim();
-    } 
-    else if (version === '3.0' || version === '3.1') {
-      text = text
-        .replace(/provide\s+me\s+with\s+a\s+detailed\s+explanation\s+about\s+how/i, 'explain')
-        .replace(/provide\s+a\s+detailed\s+explanation\s+of/i, 'explain')
-        .replace(/and\s+i\s+would\s+like\s+you\s+to\s+explain\s+it\s+in\s+simple\s+terms/i, 'simply')
-        .replace(/so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily/i, '')
-        .replace(/\b(?:create\s+a\s+python\s+function\s+that\s+accepts)\b/gi, 'Python func:')
-        .replace(/\b(?:give\s+me\s+a\s+summary\s+of)\b/gi, 'summarize')
-        .replace(/\b(?:please\s+provide\s+me\s+also\s+an\s+example\??)\b/gi, 'with an example.')
-        .trim();
-    }
+  // Version-specific transforms
+  if (version === '1.0') {
+    text = text
+      .replace(/^(?:hello|hi|hey)[,\s]+/i, '')
+      .replace(/(?:thanks|thank you)[\.\!]*$/i, '')
+      .replace(/\b(?:i am fine so how are you now)\b/gi, 'how are you')
+      .trim();
+  }
+  else if (version === '1.1') {
+    text = text
+      .replace(/\b(?:detailed\s+explanation\s+about\s+how)\b/gi, 'how')
+      .replace(/\b(?:in\s+order\s+to)\b/gi, 'to')
+      .replace(/\b(?:at\s+the\s+present\s+time)\b/gi, 'now')
+      .replace(/\b(?:due\s+to\s+the\s+fact\s+that)\b/gi, 'because')
+      .replace(/\b(?:make\s+sure\s+to\s+note\s+that)\b/gi, 'note:')
+      .replace(/\b(?:give\s+me\s+a\s+list\s+of)\b/gi, 'list')
+      .replace(/\b(?:help\s+me\s+write)\b/gi, 'write')
+      .replace(/\b(?:tell\s+me\s+about)\b/gi, 'describe')
+      .replace(/\b(?:please\s+provide\s+me\s+also\s+an\s+example)\b/gi, 'Provide an example.')
+      .trim();
+  } 
+  else if (version === '2.0') {
+    text = text
+      .replace(/provide\s+me\s+with\s+a\s+detailed\s+explanation\s+about\s+how/i, 'explain how')
+      .replace(/provide\s+a\s+detailed\s+explanation\s+about\s+how/i, 'explain how')
+      .replace(/and\s+i\s+would\s+like\s+you\s+to\s+explain\s+it\s+in\s+simple\s+terms\s+so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily\??/i, 'in simple terms for a beginner.')
+      .replace(/so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily\??/i, 'for a beginner.')
+      .replace(/\b(?:and\s+returns\s+only\s+the\s+even\s+numbers)\b/gi, 'and returns only even numbers')
+      .replace(/\b(?:i\s+want\s+you\s+to\s+act\s+as\s+a)\b/gi, 'act as a')
+      .replace(/\b(?:make\s+sure\s+that\s+you)\b/gi, '')
+      .replace(/\b(?:step\s+by\s+step\s+in\s+detail)\b/gi, 'step-by-step')
+      .replace(/\b(?:can\s+you\s+tell\s+me\s+what\s+is)\b/gi, 'what is')
+      .replace(/\b(?:please\s+provide\s+me\s+also\s+an\s+example\??)\b/gi, 'with an example.')
+      .trim();
+  } 
+  else if (version === '3.0' || version === '3.1') {
+    text = text
+      .replace(/provide\s+me\s+with\s+a\s+detailed\s+explanation\s+about\s+how/i, 'explain')
+      .replace(/provide\s+a\s+detailed\s+explanation\s+of/i, 'explain')
+      .replace(/and\s+i\s+would\s+like\s+you\s+to\s+explain\s+it\s+in\s+simple\s+terms/i, 'simply')
+      .replace(/so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily/i, '')
+      .replace(/\b(?:create\s+a\s+python\s+function\s+that\s+accepts)\b/gi, 'Python func:')
+      .replace(/\b(?:give\s+me\s+a\s+summary\s+of)\b/gi, 'summarize')
+      .replace(/\b(?:please\s+provide\s+me\s+also\s+an\s+example\??)\b/gi, 'with an example.')
+      .trim();
   }
 
   // 2. Comprehensive cleanup: deduplicate words (e.g. "I I" -> "I", "to to" -> "to"), fix punctuation

@@ -31,6 +31,16 @@
 
 **[Demo](#-demo)** · **[Features](#-key-features)** · **[Architecture](#️-architecture)** · **[Quick Start](#-quick-start)** · **[Roadmap](#-roadmap)**
 
+## Requirements
+- Node.js 20+
+- npm 10+
+
+## Local development
+- `npm install`
+- `npm run dev` (served on `http://localhost:3000`)
+- `npm run build`
+- `npm run preview` (served on `http://localhost:4173`)
+
 </div>
 
 ---

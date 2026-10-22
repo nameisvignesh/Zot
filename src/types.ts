@@ -32,6 +32,8 @@ export interface Model {
   description: string;
   device?: string; // e.g. "cuda:0", "mps", "cpu", "cloud"
   docs_url?: string;
+  api_key?: string;
+  api_key_label?: string;
   created_at: string;
 }
 
@@ -242,6 +244,7 @@ export interface UserApiKey {
 }
 
 export interface ZotSettings {
+  language: 'en' | 'ta' | 'hi' | 'ru' | 'de' | 'ja' | 'ko';
   theme: ThemeId;
   default_model: string;
   model_device: 'auto' | 'cuda:0' | 'mps' | 'cpu';

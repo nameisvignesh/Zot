@@ -140,29 +140,42 @@ export function routePrompt(
   let reason = 'user_selected';
 
   if (!selectedModel) {
-    // Intelligent Zero-Shot Routing Logic (Pages 16-17)
-    // 1. High complexity coding/reasoning (>0.70) -> Liquid AI LFM local or high-capacity tier
-    // 2. Simple tasks (<0.40) -> Lightweight local edge model (lfm-edge-1b) to save latency & compute
-    // 3. Very large context (>8K tokens) -> Cloud/Extended context model
+    // Intelligent Zero-Shot Routing Logic
+    // 1. High complexity coding/reasoning (>0.65) -> High-capacity model (largest context, best tokens/sec)
+    // 2. Simple tasks (<0.35) -> Fastest local model (lowest latency, highest tokens/sec)
+    // 3. Very large context (>8K tokens) -> Model with largest context window
+    // 4. Default -> Highest priority free model
     
     if (tokenCount > 8000) {
-      selectedModel = enabledModels.find(m => m.context_length >= 32000) || enabledModels[0];
+      // Sort by context length descending, then by priority
+      selectedModel = [...enabledModels].sort((a, b) => {
+        if (b.context_length !== a.context_length) return b.context_length - a.context_length;
+        return a.priority - b.priority;
+      })[0];
       reason = 'context_window_match (high token input)';
     } else if (complexity > 0.65) {
-      // Capability match for advanced reasoning/coding
-      selectedModel = enabledModels.find(m => m.id === 'lfm-local') 
-        || enabledModels.find(m => m.id === 'claude-3-5-sonnet')
-        || enabledModels[0];
+      // Capability match for advanced reasoning/coding - prefer high throughput models
+      selectedModel = [...enabledModels].sort((a, b) => {
+        // Prefer free models with high tokens_per_sec for complex tasks
+        if (a.is_free !== b.is_free) return a.is_free ? -1 : 1;
+        return b.tokens_per_sec - a.tokens_per_sec;
+      })[0];
       reason = `capability_match (${task} with complexity ${complexity})`;
     } else if (complexity < 0.35) {
       // Low complexity optimization (fastest, lowest cost)
-      selectedModel = enabledModels.find(m => m.id === 'lfm-edge-1b') 
-        || enabledModels.find(m => m.type === 'local')
-        || enabledModels[0];
+      // Prefer free local models with lowest latency
+      selectedModel = [...enabledModels].sort((a, b) => {
+        if (a.is_free !== b.is_free) return a.is_free ? -1 : 1;
+        if (a.type !== b.type) return a.type === 'local' ? -1 : 1;
+        return a.latency_ms_avg - b.latency_ms_avg;
+      })[0];
       reason = 'cost_latency_optimization (low complexity task)';
     } else {
-      // Balanced standard routing -> Liquid AI LFM Local default
-      selectedModel = enabledModels.find(m => m.id === 'lfm-local') || enabledModels[0];
+      // Balanced standard routing -> Highest priority free model, fallback to first enabled
+      selectedModel = [...enabledModels].sort((a, b) => {
+        if (a.is_free !== b.is_free) return a.is_free ? -1 : 1;
+        return a.priority - b.priority;
+      })[0];
       reason = 'optimal_balanced_gateway_match';
     }
   }

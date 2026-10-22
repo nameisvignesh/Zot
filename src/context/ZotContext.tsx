@@ -21,11 +21,14 @@ import {
   INITIAL_MODELS, 
   INITIAL_REQUEST_HISTORY, 
   INITIAL_USER_ACCOUNT, 
+  LOCAL_LFM_MODEL,
   PAID_FRONTIER_MODELS,
   REFINER_VERSIONS 
 } from '../data/mockData';
 import { countTokens, refinePrompt } from '../lib/tokenizer';
 import { routePrompt } from '../lib/routingEngine';
+import { translate } from '../lib/i18n';
+import { fetchPublicModelCatalog } from '../lib/publicModelCatalog';
 
 export type NavigationTab = 
   | 'dashboard'
@@ -33,14 +36,15 @@ export type NavigationTab =
   | 'refinement'
   | 'models'
   | 'analytics'
+  | 'cost-analytics'
   | 'settings'
-  | 'accounts';
+  | 'playground';
 
 export interface ExecutionPlanStep {
   id: string;
   title: string;
   description: string;
-  status: 'pending' | 'running' | 'completed' | 'skipped';
+  status: 'pending' | 'running' | 'completed' | 'skipped' | 'bypassed';
   durationMs?: number;
   outputSummary?: string;
 }
@@ -48,6 +52,7 @@ export interface ExecutionPlanStep {
 interface ZotContextType {
   activeTab: NavigationTab;
   setActiveTab: (tab: NavigationTab) => void;
+  requestNavigation: (tab: NavigationTab) => void;
   
   // Themes
   theme: ThemeId;
@@ -68,6 +73,10 @@ interface ZotContextType {
   updateModel: (model: Model) => void;
   addModel: (model: Omit<Model, 'created_at'>) => void;
   deleteModel: (id: string) => void;
+  publicModels: Model[];
+  publicModelsLoading: boolean;
+  publicModelsError: string;
+  refreshPublicModels: () => Promise<void>;
   
   // Refiner
   refinerVersions: RefinerVersion[];
@@ -83,11 +92,20 @@ interface ZotContextType {
   // Settings
   settings: ZotSettings;
   updateSettings: (newSettings: Partial<ZotSettings>) => void;
+  settingsDraft: ZotSettings;
+  updateSettingsDraft: (newSettings: Partial<ZotSettings>) => void;
+  commitSettingsDraft: () => void;
+  discardSettingsDraft: () => void;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  settingsDirty: boolean;
+  markSettingsDirty: () => void;
+  markSettingsSaved: () => void;
   
   // Gateway Connectivity
   gatewayStatus: 'ready' | 'connecting' | 'error';
   gatewayPingMs: number;
   testGatewayConnection: () => Promise<void>;
+  reportConnectionStatus: (status: 'ready' | 'error') => void;
   
   // Execution Engine & Multi-step Planner
   isExecuting: boolean;
@@ -126,108 +144,134 @@ interface ZotContextType {
 
 const ZotContext = createContext<ZotContextType | undefined>(undefined);
 
+const readStoredValue = <T,>(key: string, fallback: T): T => {
+  if (typeof window === 'undefined') return fallback;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed === null ? fallback : (parsed as T);
+  } catch {
+    return fallback;
+  }
+};
+
+const isObjectRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+/**
+ * Unwrap values written by the versioned persistence format. Older builds
+ * could persist an already-wrapped value, so unwrap a few layers defensively
+ * before handing state to the components that consume it.
+ */
+const unwrapStoredValue = (value: unknown): unknown => {
+  let current = value;
+
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (!isObjectRecord(current) || !('value' in current)) break;
+    current = current.value;
+  }
+
+  return current;
+};
+
+const getStoredValue = <T,>(
+  key: string,
+  fallback: T,
+  validate?: (value: unknown) => boolean,
+): T => {
+  const stored = unwrapStoredValue(readStoredValue<unknown>(key, fallback));
+
+  if (stored === null || stored === undefined) return fallback;
+  if (validate && !validate(stored)) return fallback;
+
+  return stored as T;
+};
+
+const writeStoredValue = <T,>(key: string, value: T) => {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ version: 2, value }));
+  } catch {
+    // Ignore quota or privacy restrictions.
+  }
+};
+
 export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
+  const [settingsDirty, setSettingsDirty] = useState(false);
   
   // Settings State with theme support
   const [settings, setSettings] = useState<ZotSettings>(() => {
-    try {
-      const saved = localStorage.getItem('zot_settings_v2');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return { ...DEFAULT_SETTINGS, ...parsed };
-      }
-      return DEFAULT_SETTINGS;
-    } catch {
-      return DEFAULT_SETTINGS;
-    }
+    const merged = getStoredValue<Partial<ZotSettings>>('zot_settings_v2', {}, isObjectRecord);
+    return { ...DEFAULT_SETTINGS, ...merged } as ZotSettings;
   });
+  const [settingsDraft, setSettingsDraft] = useState<ZotSettings>(() => settings);
 
   const [theme, setThemeState] = useState<ThemeId>(() => {
-    try {
-      const savedTheme = localStorage.getItem('zot_theme_v2') as ThemeId;
-      if (savedTheme && APP_THEMES.some(t => t.id === savedTheme)) {
-        return savedTheme;
-      }
-      return settings.theme || 'amber-zero';
-    } catch {
-      return 'amber-zero';
+    const savedTheme = typeof window !== 'undefined' ? window.localStorage.getItem('zot_theme_v2') : null;
+    if (savedTheme && APP_THEMES.some(t => t.id === savedTheme)) {
+      return savedTheme as ThemeId;
     }
+    return settings.theme || 'amber-zero';
   });
 
   // Hugging Face Auth Gate State
   const [hfAuthState, setHfAuthState] = useState<HuggingFaceAuthState>(() => {
-    try {
-      const saved = localStorage.getItem('zot_hf_auth');
-      return saved ? JSON.parse(saved) : {
-        isConnected: false,
-        apiKey: '',
-        username: '',
-        verifiedAt: null,
-        onlyFreeUnlimitedModels: true,
-        availableFreeModelsCount: 7
-      };
-    } catch {
-      return {
-        isConnected: false,
-        apiKey: '',
-        username: '',
-        verifiedAt: null,
-        onlyFreeUnlimitedModels: true,
-        availableFreeModelsCount: 7
-      };
-    }
+    const saved = getStoredValue<Partial<HuggingFaceAuthState>>('zot_hf_auth', {}, isObjectRecord);
+    return {
+      isConnected: false,
+      apiKey: '',
+      username: '',
+      verifiedAt: null,
+      onlyFreeUnlimitedModels: true,
+      availableFreeModelsCount: 7,
+      ...saved
+    } as HuggingFaceAuthState;
   });
 
   // Models State (Free division)
   const [models, setModels] = useState<Model[]>(() => {
-    try {
-      const saved = localStorage.getItem('zot_models_v2');
-      return saved ? JSON.parse(saved) : INITIAL_MODELS;
-    } catch {
-      return INITIAL_MODELS;
-    }
+    const saved = getStoredValue<Model[]>('zot_models_v2', [LOCAL_LFM_MODEL], Array.isArray);
+    const configured = saved.filter(model => !model.is_builtin || model.id === LOCAL_LFM_MODEL.id);
+    return configured.some(model => model.id === LOCAL_LFM_MODEL.id)
+      ? configured
+      : [LOCAL_LFM_MODEL, ...configured];
   });
+
+  const [publicModels, setPublicModels] = useState<Model[]>([]);
+  const [publicModelsLoading, setPublicModelsLoading] = useState(false);
+  const [publicModelsError, setPublicModelsError] = useState('');
 
   // Paid Frontier Models
   const [paidModels] = useState<Model[]>(PAID_FRONTIER_MODELS);
 
   // Requests History State
   const [requests, setRequests] = useState<RequestRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem('zot_requests_v2');
-      return saved ? JSON.parse(saved) : INITIAL_REQUEST_HISTORY;
-    } catch {
-      return INITIAL_REQUEST_HISTORY;
-    }
+    const stored = getStoredValue<RequestRecord[]>('zot_requests_v2', INITIAL_REQUEST_HISTORY, Array.isArray);
+    const configuredModelIds = new Set(models.map(model => model.id));
+
+    // Ignore records from models that were removed from the new minimal router.
+    // This keeps the Analytics page aligned with the currently configured model registry.
+    return stored.filter(request => configuredModelIds.has(request.model_id));
   });
 
   const [activeRequest, setActiveRequest] = useState<RequestRecord | null>(null);
 
   // Clerk Auth State
   const [userAccount, setUserAccount] = useState<UserAccount | null>(() => {
-    try {
-      const saved = localStorage.getItem('zot_user_clerk');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.imageUrl && typeof parsed.imageUrl === 'string' && parsed.imageUrl.includes('unsplash.com')) {
-          parsed.imageUrl = undefined;
-        }
-        return parsed;
-      }
-      return INITIAL_USER_ACCOUNT;
-    } catch {
-      return INITIAL_USER_ACCOUNT;
+    const parsed = getStoredValue<Partial<UserAccount> | UserAccount>('zot_user_clerk', INITIAL_USER_ACCOUNT, isObjectRecord);
+    if (parsed && typeof parsed === 'object' && 'imageUrl' in parsed && typeof parsed.imageUrl === 'string' && parsed.imageUrl.includes('unsplash.com')) {
+      parsed.imageUrl = undefined;
     }
+    return parsed as UserAccount;
   });
 
   const [apiKeys, setApiKeys] = useState<UserApiKey[]>(() => {
-    try {
-      const saved = localStorage.getItem('zot_api_keys');
-      return saved ? JSON.parse(saved) : INITIAL_API_KEYS;
-    } catch {
-      return INITIAL_API_KEYS;
-    }
+    return getStoredValue<UserApiKey[]>('zot_api_keys', INITIAL_API_KEYS, Array.isArray);
   });
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -245,42 +289,67 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setTheme = (newTheme: ThemeId) => {
     setThemeState(newTheme);
     setSettings(prev => ({ ...prev, theme: newTheme }));
-    localStorage.setItem('zot_theme_v2', newTheme);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('zot_theme_v2', newTheme);
+    }
     document.documentElement.setAttribute('data-theme', newTheme);
   };
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('zot_theme_v2', theme);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('zot_theme_v2', theme);
+    }
   }, [theme]);
 
   // Synchronize Local Storage
   useEffect(() => {
-    localStorage.setItem('zot_models_v2', JSON.stringify(models));
+    writeStoredValue('zot_models_v2', models);
   }, [models]);
 
   useEffect(() => {
-    localStorage.setItem('zot_requests_v2', JSON.stringify(requests));
+    writeStoredValue('zot_requests_v2', requests);
   }, [requests]);
 
   useEffect(() => {
-    localStorage.setItem('zot_settings_v2', JSON.stringify(settings));
+    writeStoredValue('zot_settings_v2', settings);
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem('zot_hf_auth', JSON.stringify(hfAuthState));
+    if (!settingsDirty) setSettingsDraft(settings);
+  }, [settings, settingsDirty]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setPublicModelsLoading(true);
+    fetchPublicModelCatalog(controller.signal)
+      .then(catalog => {
+        setPublicModels(catalog);
+        setPublicModelsError('');
+      })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setPublicModelsError(error instanceof Error ? error.message : 'Unable to load the public model catalog.');
+      })
+      .finally(() => setPublicModelsLoading(false));
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    writeStoredValue('zot_hf_auth', hfAuthState);
   }, [hfAuthState]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     if (userAccount) {
-      localStorage.setItem('zot_user_clerk', JSON.stringify(userAccount));
+      writeStoredValue('zot_user_clerk', userAccount);
     } else {
-      localStorage.removeItem('zot_user_clerk');
+      window.localStorage.removeItem('zot_user_clerk');
     }
   }, [userAccount]);
 
   useEffect(() => {
-    localStorage.setItem('zot_api_keys', JSON.stringify(apiKeys));
+    writeStoredValue('zot_api_keys', apiKeys);
   }, [apiKeys]);
 
   // Hugging Face Connection handler (fetches free unlimited models)
@@ -299,10 +368,10 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setHfAuthState(newAuthState);
-    localStorage.setItem('zot_hf_auth', JSON.stringify(newAuthState));
-    
-    // Automatically populate and filter only free unlimited models
-    setModels(FREE_HF_UNLIMITED_MODELS);
+    writeStoredValue('zot_hf_auth', newAuthState);
+
+    // HF access gates refinement, but does not silently add models to the router.
+    // Models become routable only after the user configures their provider key and endpoint.
     return true;
   };
 
@@ -316,7 +385,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       availableFreeModelsCount: INITIAL_MODELS.length
     };
     setHfAuthState(emptyState);
-    localStorage.setItem('zot_hf_auth', JSON.stringify(emptyState));
+    writeStoredValue('zot_hf_auth', emptyState);
   };
 
   const fetchFreeUnlimitedModels = async (): Promise<Model[]> => {
@@ -340,36 +409,98 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...modelData,
       created_at: new Date().toISOString()
     };
-    setModels(prev => [...prev, newModel]);
+    setModels(prev => {
+      const exists = prev.some(model => model.id === newModel.id);
+      return exists
+        ? prev.map(model => model.id === newModel.id ? { ...model, ...newModel, enabled: true } : model)
+        : [...prev, newModel];
+    });
   };
 
   const deleteModel = (id: string) => {
     setModels(prev => prev.filter(m => m.id !== id));
   };
 
+  const refreshPublicModels = async () => {
+    setPublicModelsLoading(true);
+    setPublicModelsError('');
+    try {
+      setPublicModels(await fetchPublicModelCatalog());
+    } catch (error) {
+      setPublicModelsError(error instanceof Error ? error.message : 'Unable to load the public model catalog.');
+    } finally {
+      setPublicModelsLoading(false);
+    }
+  };
+
   const updateSettings = (newSettings: Partial<ZotSettings>) => {
+    setSettingsDraft(prev => ({ ...prev, ...newSettings }));
     setSettings(prev => {
       const updated = { ...prev, ...newSettings };
       if (newSettings.theme) {
         setThemeState(newSettings.theme);
-        localStorage.setItem('zot_theme_v2', newSettings.theme);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('zot_theme_v2', newSettings.theme);
+        }
       }
       return updated;
     });
   };
 
+  const updateSettingsDraft = (newSettings: Partial<ZotSettings>) => {
+    setSettingsDraft(prev => ({ ...prev, ...newSettings }));
+    setSettingsDirty(true);
+  };
+
+  const commitSettingsDraft = () => {
+    updateSettings(settingsDraft);
+    setSettingsDirty(false);
+  };
+
+  const discardSettingsDraft = () => {
+    setSettingsDraft(settings);
+    setSettingsDirty(false);
+  };
+
+  const requestNavigation = (tab: NavigationTab) => {
+    if (tab === activeTab) return;
+    if (activeTab === 'settings' && settingsDirty) {
+      const shouldSave = window.confirm('Do you want to save these preferences before leaving? Press Cancel to leave without saving.');
+      if (shouldSave) commitSettingsDraft();
+      else discardSettingsDraft();
+    }
+    setActiveTab(tab);
+  };
+
+  const markSettingsDirty = () => setSettingsDirty(true);
+  const markSettingsSaved = () => setSettingsDirty(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !settingsDirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [settingsDirty]);
+
+  const t = (key: string, values: Record<string, string | number> = {}) => translate(settings.language, key, values);
+
   const updateUserProfile = (updates: Partial<UserAccount>) => {
     setUserAccount(prev => {
       if (!prev) return null;
       const updated = { ...prev, ...updates };
-      localStorage.setItem('zot_user_clerk', JSON.stringify(updated));
+      writeStoredValue('zot_user_clerk', updated);
       return updated;
     });
   };
 
   const clearHistory = () => {
     setRequests([]);
-    localStorage.removeItem('zot_requests_v2');
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('zot_requests_v2');
+    }
   };
 
   // Clerk Auth functions
@@ -445,6 +576,8 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setGatewayStatus('ready');
   };
 
+  const reportConnectionStatus = (status: 'ready' | 'error') => setGatewayStatus(status);
+
   // Currency Converter
   const convertCurrency = (usdAmount: number): number => {
     const rate = settings.currency_rates[settings.cost_currency] || 1.0;
@@ -514,8 +647,8 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       {
         id: 'plan_4_execute',
-        title: 'Step 4: Inference Execution & Output Stream',
-        description: 'Execute model inference and stream token output with sub-500ms latency',
+        title: 'Step 4: Routing Decision Commit',
+        description: 'Commit the selected model and routing metadata without generating a model response',
         status: 'pending'
       },
       {
@@ -563,50 +696,17 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await new Promise(r => setTimeout(r, 70));
     setExecutionPlan(prev => prev.map((s, idx) => idx === 2 ? { ...s, status: 'completed', durationMs: 35, outputSummary: `${routingDecision.task} → ${selectedModel.name}` } : s));
 
-    // Stage 4: Inference Execution & Streaming
+    // Stage 4: Routing-only dispatch. The router selects a target model but
+    // deliberately does not generate or stream an AI response.
     setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'running' } : s));
     
-    let generatedResponse = '';
-    const task = routingDecision.task;
-    const promptLower = (processedPrompt || '').toLowerCase();
-
-    if (task === 'Coding') {
-      if (promptLower.includes('even numbers')) {
-        generatedResponse = `\`\`\`python\ndef get_even_numbers(numbers: list[int]) -> list[int]:\n    """Filter and return only even integers from input list without NumPy."""\n    return [num for num in numbers if num % 2 == 0]\n\n# Verification test:\n# print(get_even_numbers([1, 2, 3, 4, 5, 6, 7, 8])) # Output: [2, 4, 6, 8]\n\`\`\``;
-      } else if (promptLower.includes('sql') || promptLower.includes('database')) {
-        generatedResponse = `\`\`\`sql\n-- Optimized with composite btree index for high-cardinality lookups\nCREATE INDEX idx_req_user_latency ON requests (user_id, status, latency_ms DESC);\n\n-- Verified zero sequential scan bottleneck\nEXPLAIN QUERY PLAN\nSELECT id, user_id, tokens_saved, latency_ms \nFROM requests \nWHERE user_id = ? AND status = 'success' \nORDER BY latency_ms DESC LIMIT 20;\n\`\`\``;
-      } else {
-        generatedResponse = `\`\`\`typescript\n// Generated by ZOT Zero-Shot Gateway (${selectedModel.name})\nexport function optimizePipeline<T>(items: T[], filterFn: (x: T) => boolean): T[] {\n  return items.filter(filterFn);\n}\n\`\`\``;
-      }
-    } else if (task === 'Summarization') {
-      generatedResponse = `**Concise Summary**: ${(processedPrompt || '').replace(/^(?:summarize|explain|give a summary of)/i, '').trim()}\n\n1. **Core Mechanism**: Zero-shot categorization routes tokens directly to the most efficient 100% free model.\n2. **Preservation**: Invariant constraint filters strip verbal politeness without altering payload semantics.\n3. **Result**: Zero inference cost with sub-500ms deterministic response.`;
-    } else if (task === 'Extraction') {
-      generatedResponse = `\`\`\`json\n{\n  "status": "success",\n  "model_routed": "${selectedModel.name}",\n  "tier": "${selectedModel.tier || 'free'}",\n  "is_free": ${selectedModel.is_free},\n  "data": {\n    "client_ips": ["192.168.1.104", "10.0.4.12", "172.16.0.89"],\n    "status_code": 500,\n    "raw_query_strings_excluded": true\n  }\n}\n\`\`\``;
-    } else if (task === 'Reasoning') {
-      generatedResponse = `### Distributed Architecture & Optimization Analysis\n\n1. **Node Processing**: Input tokens analyzed against ${selectedModel.name} context boundary.\n2. **Constraint Verification**: Verified 100% preservation of strict technical parameters.\n3. **Recommendation**: Local open-weight inference guarantees complete privacy and 0% billing overhead.`;
-    } else {
-      generatedResponse = `Machine learning algorithms allow computers to learn patterns directly from empirical data rather than relying on rigid hand-crafted rules.\n\nKey pillars:\n- **Input Data**: Raw training examples representing the domain.\n- **Loss Function**: Mathematical measure of prediction error.\n- **Gradient Optimization**: Iterative weight adjustment to minimize loss over time.`;
-    }
-
-    const outputTokens = countTokens(generatedResponse);
-    const timeToFirstToken = Math.round(selectedModel.latency_ms_avg * 0.28);
+    const generatedResponse = '';
+    const outputTokens = 0;
+    const timeToFirstToken = 0;
     
-    if (settings.streaming_enabled && settings.simulation_speed !== 'instant') {
-      const words = generatedResponse.split(' ');
-      let current = '';
-      for (let i = 0; i < words.length; i++) {
-        current += (i > 0 ? ' ' : '') + words[i];
-        setStreamingOutput(current);
-        if (params.onStreamChunk) params.onStreamChunk(current);
-        const delay = settings.simulation_speed === 'fast' ? 10 : 20;
-        await new Promise(r => setTimeout(r, delay));
-      }
-    } else {
-      setStreamingOutput(generatedResponse);
-      if (params.onStreamChunk) params.onStreamChunk(generatedResponse);
-    }
+    setStreamingOutput('');
 
-    setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'completed', durationMs: selectedModel.latency_ms_avg, outputSummary: `${outputTokens} tokens streamed` } : s));
+    setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'completed', durationMs: selectedModel.latency_ms_avg, outputSummary: 'Routing committed • No response generated' } : s));
 
     // Stage 5: Telemetry Sink
     setExecutionPlan(prev => prev.map((s, idx) => idx === 4 ? { ...s, status: 'running' } : s));
@@ -622,7 +722,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       task_type: routingDecision.task,
       original_prompt: params.prompt,
       refined_prompt: processedPrompt,
-      response_text: generatedResponse,
+      response_text: '',
       refine_enabled: params.refine,
       refiner_version: versionToUse,
       input_tokens: inputTokens,
@@ -655,6 +755,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <ZotContext.Provider value={{
       activeTab,
       setActiveTab,
+      requestNavigation,
       theme,
       setTheme,
       themes: APP_THEMES,
@@ -669,6 +770,10 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       updateModel,
       addModel,
       deleteModel,
+      publicModels,
+      publicModelsLoading,
+      publicModelsError,
+      refreshPublicModels,
       refinerVersions: REFINER_VERSIONS,
       activeRefinerVersion,
       setActiveRefinerVersion,
@@ -678,9 +783,18 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearHistory,
       settings,
       updateSettings,
+      settingsDraft,
+      updateSettingsDraft,
+      commitSettingsDraft,
+      discardSettingsDraft,
+      t,
+      settingsDirty,
+      markSettingsDirty,
+      markSettingsSaved,
       gatewayStatus,
       gatewayPingMs,
       testGatewayConnection,
+      reportConnectionStatus,
       isExecuting,
       streamingOutput,
       lastExecutionMetrics,
