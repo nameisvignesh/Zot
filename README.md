@@ -1,850 +1,157 @@
 <div align="center">
 
-```
-                         ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄        ▄▄▄▄▄▄        ▄▄▄▄▄▄▄▄▄▄▄▄▄▄    
-                         █▒▓██████████████▓░░    ▄▄▀▀▒▓███▒▀▀▄▄    █░░░▒▓██▓▒░░▒▒▀▀▀▄
-                         █▄▄▄▄▄▄▄▄▄▄▄░▒▓▓▓▒░▒   █░▒▓▒░▄▄▄▄░▒▓▒░█   ▀▀▀▀▀▄▓█░▒▓▒░░▒▒░░
-                                  ▄▀░▒▒▒▒░▄▀   █░▒▒░▄▀    ▀▄▒▒░█       █▒░▒▒░▄▀▀▀▀▀▀
-                             ▄▀▀▀▀ ░░░░ ▄▀    █ ░░ ▄▀      ▀▄ ░░ █      █░░░  █      
-                              █ ░   ░  █      █    █        █    █      █░    █      
-                            ▄▀      ▄▄▄▄▀     ▄    ▀▄      ▄▀    █      ▄ ■   █      
-                          ▄▀      ▄▀   ▄▄▄▀▀█  ▀    ▀▄    ▄▀    █       █ ·   █      
-                         █       ▀▀▀▀▀▀     ░   █     ▀▀▀▀     █        █     █      
-                         █ ■·-              ▒    ▀▀▄▄■·-  ■▄▄▀▀         █    ▄█      
-                         ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀        ▀▀▀▀▀▀             ▀▀▀▀▀        
-```
+# ZOT
 
-# ⚡ Zot
+### Zero-Shot Prompt Routing for a multi-model world
 
-### Intelligent Zero-Shot Prompt Routing & Token Optimization Engine
+Classify a prompt, compare the models that can handle it, and send it to the model that best fits the task, budget, and latency you care about.
 
-**Dynamic model arbitration · Constraint preservation · Cost optimization · Multi-model inference**
+<p>
+  <a href="https://github.com/nameisvignesh/Zot">Repository</a> ·
+  <a href="https://github.com/nameisvignesh/Zot/issues">Issues</a> ·
+  <a href="https://github.com/nameisvignesh/Zot/pulls">Contribute</a>
+</p>
 
-<br>
+![ZOT dashboard](public/readme-dashboard.png)
 
-[![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
-[![React](https://img.shields.io/badge/React-19.x-61DAFB.svg?logo=react\&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-6.x-646CFF.svg?logo=vite\&logoColor=white)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-4.x-38B2AC.svg?logo=tailwind-css\&logoColor=white)](https://tailwindcss.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6.svg?logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/nameisvignesh/Zot/pulls)
-
-**[Demo](#-demo)** · **[Features](#-key-features)** · **[Architecture](#️-architecture)** · **[Quick Start](#-quick-start)** · **[Roadmap](#-roadmap)**
-
-## Requirements
-- Node.js 20+
-- npm 10+
-
-## Local development
-- `npm install`
-- `npm run dev` (served on `http://localhost:3000`)
-- `npm run build`
-- `npm run preview` (served on `http://localhost:4173`)
+<p>
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111" alt="React 19" />
+  <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=fff" alt="Vite 6" />
+  <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=fff" alt="TypeScript 5.8" />
+  <img src="https://img.shields.io/badge/License-MIT-f5f5f5?labelColor=111" alt="MIT License" />
+</p>
 
 </div>
 
----
+## What is ZOT?
 
-# 📖 About Zot
+ZOT is a local-first control plane for using multiple AI models. It separates the routing decision from generation so you can see why a model was selected and what that route is expected to cost before sending the request.
 
-**Zot** is a zero-shot prompt routing and token optimization engine designed to intelligently select the most appropriate LLM for each individual request.
-
-Instead of sending every prompt to an expensive frontier model, Zot analyzes the request first and determines whether it can be handled by a smaller, cheaper, or local model.
+The interface is designed for a black-and-white workspace with small, meaningful status colors: green for healthy and successful states, red for errors, and yellow for warnings. It uses the bundled Geist Variable font and adapts to compact mobile layouts.
 
 ```text
-                 USER PROMPT
-                      │
-                      ▼
-              ┌───────────────┐
-              │ Prompt Lexer  │
-              └───────┬───────┘
-                      │
-                      ▼
-          ┌────────────────────────┐
-          │ Intent & Complexity    │
-          │ Classification         │
-          └───────────┬────────────┘
-                      │
-                      ▼
-              ┌───────────────┐
-              │ Budget Arbiter│
-              └───────┬───────┘
-                      │
-             ┌────────┴────────┐
-             ▼                 ▼
-        LOCAL MODELS      FRONTIER APIs
-             │                 │
-             └────────┬────────┘
-                      ▼
-             ┌────────────────┐
-             │ Output         │
-             │ Sanitizer      │
-             └───────┬────────┘
-                     │
-                     ▼
-                FINAL OUTPUT
-```
-
----
-
-# 🎯 Why Zot?
-
-Modern AI applications often use the same model for every task.
-
-That creates three major problems:
-
-### 💸 Unnecessary Cost
-
-Simple prompts are frequently sent to expensive models even when a smaller model could solve them.
-
-### 🧠 Poor Model Utilization
-
-Different models have different strengths. A coding task, summarization task, reasoning task, and creative task should not necessarily use the same model.
-
-### 🔒 Vendor Lock-in
-
-Applications become tightly coupled to a single AI provider.
-
-### Zot's Solution
-
-Zot evaluates every request before inference and dynamically selects the best available model based on:
-
-* Task intent
-* Prompt complexity
-* Domain compatibility
-* Budget
-* Latency
-* Context capacity
-* User-defined constraints
-
----
-
-# ✨ Key Features
-
-## ⚡ Zero-Shot Dynamic Routing
-
-Analyze and route prompts without:
-
-* Fine-tuning
-* Training datasets
-* A separately trained classifier
-* Manual model selection
-
-The router evaluates each request at runtime.
-
----
-
-## 🛡️ Negative Constraint Preservation
-
-Zot treats strict instructions as **invariants**.
-
-Example:
-
-```text
-Do not use external libraries.
-
-Never include a preamble.
-
-Return JSON only.
-
-Keep the response under 100 words.
-```
-
-These rules are extracted and verified against the generated response.
-
-| Rule             | Example                  | Enforcement          |
-| ---------------- | ------------------------ | -------------------- |
-| Dependency ban   | No external libraries    | Import validation    |
-| Preamble ban     | No introduction          | Structure validation |
-| Format lock      | JSON only                | JSON validation      |
-| Tone restriction | Avoid marketing language | Lexical checks       |
-| Length bound     | Under 100 words          | Token / word count   |
-
----
-
-## 💰 Budget-Aware Routing
-
-Set the maximum amount you're willing to spend.
-
-```text
-Maximum Budget
-      │
-      ▼
-    $0.00
-      │
-      ▼
-┌───────────────┐
-│ Local Models  │
-│ Ollama        │
-│ LM Studio     │
-│ vLLM          │
-└───────────────┘
-```
-
-Models outside the configured budget are automatically excluded.
-
----
-
-## 🕸️ Interactive 2D Node Graph
-
-Visualize the entire routing pipeline.
-
-The graph provides:
-
-* Pan
-* Zoom
-* Reset
-* Fit-to-screen
-* Execution wires
-* Node inspection
-* Routing visualization
-
----
-
-## 📊 Real-Time Telemetry
-
-Monitor:
-
-* Request latency
-* Tokens/sec
-* Context utilization
-* Expected cost
-* Historical usage
-* Model performance
-
----
-
-## 🎛️ Multi-Model Playground
-
-Compare models side-by-side before routing.
-
-Supported controls include:
-
-* Temperature
-* Top-p
-* Token streaming
-* Model comparison
-* Custom endpoints
-
----
-
-## 🔐 Client-Side API Key Vault
-
-Zot does not require a central backend.
-
-Provider credentials remain inside the user's browser storage and requests are sent directly to the configured provider.
-
----
-
-# 🧠 How Routing Works
-
-Every request passes through five stages.
-
-## 01 — Prompt Lexing
-
-The raw prompt is tokenized and structurally analyzed.
-
-```text
-RAW PROMPT
+Your prompt
     │
-    ├── Token Count
-    ├── Code Detection
-    ├── Language Markers
-    └── Instruction Density
+    ▼
+Classify intent + estimate tokens
+    │
+    ▼
+Compare configured and public models
+    │
+    ▼
+Route to the selected provider
+    │
+    ▼
+Chat response + latency + cost telemetry
 ```
 
----
+## Features
 
-## 02 — Negative Rule Extraction
+- **Dashboard** — product overview, routing concepts, and quick access to the main workflows.
+- **Prompt Router** — classify a prompt, choose a target override, and compare model context, token estimates, latency, and cost.
+- **Model Registry** — configure API providers, test connections, use built-in model templates, and inspect the live public catalog.
+- **Playground** — chat with a selected configured model, see routing decisions, and clear the conversation at any time.
+- **Prompt Refinement** — use a Hugging Face token or a common provider token to unlock the refinement workflow and compare token savings.
+- **Analytics** — inspect routing history, token usage, request outcomes, model usage, and chart/table views.
+- **Cost meter** — set an INR, USD, EUR, or GBP alert threshold from 100 to 50,000, including a custom amount.
+- **Settings** — configure language, currency, default model, local device, timeout, and routing behavior. Unsaved settings are protected when navigating away.
+- **Internationalized UI** — English, Tamil, Hindi, Russian, German, Japanese, and Korean labels are available.
+- **Responsive workspace** — navigation, tables, cards, and chat controls adapt to small screens.
 
-Hard constraints are identified and registered as invariants.
+## Quick start
 
-```text
-"Do not use external libraries"
+### Requirements
 
-             ↓
+- Node.js 20 or newer
+- npm 10 or newer
 
-       CONSTRAINT RULE
-
-             ↓
-
-       dependency_ban
-```
-
----
-
-## 03 — Intent & Complexity Classification
-
-Zot determines what the prompt is trying to accomplish.
-
-Example:
-
-```text
-Write a Python function
-          │
-          ▼
-      CODE TASK
-          │
-          ▼
-    LOW COMPLEXITY
-          │
-          ▼
-     LOCAL MODEL
-```
-
-Complex reasoning tasks can instead be routed to stronger models.
-
----
-
-## 04 — Budget & Capability Arbitration
-
-Candidate models are evaluated using multiple signals:
-
-```text
-route_score(model) =
-
-    w₁ · domain_fit
-  + w₂ · complexity_match
-  + w₃ · budget_score
-  + w₄ · latency_score
-  + w₅ · context_fit
-```
-
-The highest-scoring compatible model becomes the routing target.
-
----
-
-## 05 — Dispatch, Sanitization & Telemetry
-
-The selected model generates the response.
-
-Zot then:
-
-```text
-Generated Response
-        │
-        ▼
-Output Sanitizer
-        │
-   ┌────┴─────┐
-   ▼          ▼
-Valid       Invalid
-   │          │
-   ▼          ▼
-Output     Refinement
-```
-
-Latency and cost information are recorded for analytics.
-
----
-
-# 🏗️ Architecture
-
-```text
-┌──────────────────────────────┐
-│          USER PROMPT         │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│     Invariant Prompt Lexer   │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│ Token Tensor & Rule Extractor│
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│      LFM MoE Arbiter         │
-│ Intent + Complexity + Domain │
-└──────────────┬───────────────┘
-               │
-       ┌───────┴────────┐
-       ▼                ▼
-┌──────────────┐  ┌──────────────┐
-│Budget Arbiter │  │Capability    │
-│              │  │Matcher       │
-└──────┬───────┘  └──────┬───────┘
-       │                 │
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Model Selection │
-       └────────┬────────┘
-                │
-        ┌───────┴────────┐
-        ▼                ▼
-┌──────────────┐  ┌──────────────┐
-│ Local Models │  │ Frontier APIs│
-└──────┬───────┘  └──────┬───────┘
-       │                 │
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Output Sanitizer│
-       └────────┬────────┘
-                │
-                ▼
-       ┌─────────────────┐
-       │    Telemetry    │
-       └────────┬────────┘
-                │
-                ▼
-          FINAL OUTPUT
-```
-
----
-
-# 🤖 Supported Models & Providers
-
-## Local / Free
-
-| Provider          | Example Models        |    Cost |
-| ----------------- | --------------------- | ------: |
-| Built-in Registry | LFM, Mistral, Qwen    | `$0.00` |
-| Ollama            | Any local model       | `$0.00` |
-| LM Studio         | GGUF models           | `$0.00` |
-| vLLM              | Supported checkpoints | `$0.00` |
-
-## Frontier / API
-
-| Provider   | Example                | Cost         |
-| ---------- | ---------------------- | ------------ |
-| OpenAI     | GPT models             | Configurable |
-| Anthropic  | Claude models          | Configurable |
-| Google     | Gemini models          | Configurable |
-| OpenRouter | Multi-provider models  | Varies       |
-| Custom     | OpenAI-compatible APIs | User-defined |
-
----
-
-# 🚀 Quick Start
-
-## Prerequisites
-
-* Node.js `18+`
-* npm / pnpm / bun / yarn
-* Optional: Ollama, LM Studio, or vLLM
-
-## Installation
+### Install and run
 
 ```bash
 git clone https://github.com/nameisvignesh/Zot.git
-
 cd Zot
-
 npm install
-```
-
-## Development
-
-```bash
 npm run dev
 ```
 
-Open:
+Open [http://localhost:3000](http://localhost:3000).
 
-```text
-http://localhost:3000
-```
-
----
-
-# 🦙 Ollama Setup
-
-Start your local Ollama server:
+### Production build
 
 ```bash
-ollama serve
-```
-
-Example endpoint:
-
-```text
-http://localhost:11434/v1
-```
-
-Example model:
-
-```text
-qwen2.5:7b
-```
-
-Configure it in Zot:
-
-| Setting           | Value                       |
-| ----------------- | --------------------------- |
-| Provider          | Ollama                      |
-| Base URL          | `http://localhost:11434/v1` |
-| Model ID          | `qwen2.5:7b`                |
-| API Key           | Optional                    |
-| Context           | `32768`                     |
-| Price / 1M tokens | `0.00`                      |
-
-If CORS blocks browser requests:
-
-```bash
-OLLAMA_ORIGINS=http://localhost:3000 ollama serve
-```
-
----
-
-# ⚙️ Configuration
-
-Zot's model registry supports:
-
-| Field          | Description               |
-| -------------- | ------------------------- |
-| Model Name     | Display name              |
-| Provider       | Model provider            |
-| Base URL       | API endpoint              |
-| Model ID       | Provider model identifier |
-| API Key        | Authentication            |
-| Context Length | Maximum context           |
-| Token Price    | Cost per 1M tokens        |
-| Capabilities   | Supported tasks           |
-
-Any OpenAI-compatible endpoint can be registered.
-
----
-
-# 🕹️ Application Modules
-
-| Module         | Purpose                             |
-| -------------- | ----------------------------------- |
-| **Dashboard**  | Overall system overview             |
-| **Routing**    | Prompt analysis and model selection |
-| **Node Graph** | Visual routing pipeline             |
-| **Playground** | Multi-model testing                 |
-| **Refinement** | Constraint analysis                 |
-| **Analytics**  | Cost and latency monitoring         |
-| **Accounts**   | API key management                  |
-| **Models**     | Model registry                      |
-
----
-
-# 📦 Build
-
-Create a production build:
-
-```bash
+npm run typecheck
 npm run build
-```
-
-Output:
-
-```text
-dist/
-```
-
-Preview:
-
-```bash
 npm run preview
 ```
 
----
+## Configure a model
 
-# 🌐 GitHub Pages
+1. Open **Models**.
+2. Choose a built-in template or add a custom model.
+3. Enter the provider API key, endpoint, and model ID.
+4. Select **Test connection**.
+5. Open **Playground** or **Prompt Router** and send a prompt.
 
-Zot is designed to work as a static web application.
+ZOT accepts OpenAI-compatible endpoints and has native request handling for Anthropic and Google Gemini endpoints. Common endpoint bases include:
 
-### Build
+| Provider | Endpoint base |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| Anthropic | `https://api.anthropic.com` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+
+Provider keys are entered in the browser and are not part of the repository. Do not commit API keys or `.env` files.
+
+## Public model catalog
+
+The Models and Prompt Router pages load the public catalog from the [OpenRouter Models API](https://openrouter.ai/docs/api/api-reference/models/get-models) at runtime. Catalog entries include model name, provider, context length, published pricing, and documentation links. Prompt-specific token and estimated cost values are calculated by ZOT; latency is shown when the catalog publishes it.
+
+## Local LFM checkpoint
+
+ZOT can recognize the optional `LFM2.5-230M/` checkpoint directory as a local route target. The checkpoint is intentionally not committed because its weights are large and are maintained in the Liquid AI Hugging Face repository.
+
+To download it locally when needed:
 
 ```bash
-npm run build
+git lfs install
+git clone https://huggingface.co/LiquidAI/LFM2.5-230M LFM2.5-230M
 ```
 
-### Deploy
+The browser app can use the checkpoint as a local routing target. Generated chat responses from local weights require a compatible local inference runtime; configured API providers can answer directly from the Playground.
 
-```bash
-npx gh-pages -d dist
-```
-
-GitHub Actions can also be used for automated deployment.
-
----
-
-# 💻 Tech Stack
-
-| Layer           | Technology                  |
-| --------------- | --------------------------- |
-| UI              | React 19                    |
-| Language        | TypeScript 5.8              |
-| Build           | Vite 6                      |
-| Styling         | Tailwind CSS 4              |
-| Icons           | Lucide React                |
-| Animation       | Motion                      |
-| Charts          | Recharts                    |
-| Local Inference | Ollama / LM Studio / vLLM   |
-| API             | OpenAI-compatible endpoints |
-| Deployment      | GitHub Pages                |
-
----
-
-# 📁 Project Structure
+## Project structure
 
 ```text
-Zot/
-│
-├── public/
-│
-├── src/
-│   ├── components/
-│   │   ├── accounts/
-│   │   ├── analytics/
-│   │   ├── dashboard/
-│   │   ├── models/
-│   │   ├── nodes/
-│   │   ├── playground/
-│   │   ├── refinement/
-│   │   └── routing/
-│   │
-│   ├── context/
-│   ├── data/
-│   ├── lib/
-│   ├── types.ts
-│   ├── App.tsx
-│   └── main.tsx
-│
-├── index.html
-├── package.json
-├── tsconfig.json
-├── vite.config.ts
-└── README.md
+src/
+├── components/       UI views for dashboard, routing, models, chat, analytics, and settings
+├── context/          Shared settings, models, routing, telemetry, and persistence state
+├── data/             Built-in model templates and initial application data
+├── lib/              Routing engine, tokenizer, model client, i18n, and public catalog loader
+├── types.ts           Shared TypeScript domain types
+└── index.css          Geist Variable font, theme tokens, responsive layout, and components
+public/
+├── fonts/             Bundled Geist Variable WOFF2 font
+└── readme-dashboard.png  Dashboard screenshot used in this README
 ```
 
----
+## Development notes
 
-# 🗺️ Roadmap
+- `npm run dev` starts Vite on port `3000`.
+- `npm run typecheck` runs TypeScript without emitting files.
+- `npm run build` creates the production bundle in `dist/`.
+- Preferences, configured models, and local telemetry are kept in browser storage for this client-side workspace.
+- The downloaded LFM checkpoint is ignored by Git; keep it outside commits and releases.
 
-* [ ] Multi-model fan-out
-* [ ] Routing policy files
-* [ ] Cost history export
-* [ ] Streaming node graph
-* [ ] Prompt A/B refinement
-* [ ] Embedding-based semantic cache
-* [ ] Desktop application
-* [ ] Internationalization
-* [ ] Advanced routing benchmarks
-* [ ] Automated model performance scoring
+## Contributing
 
----
+Issues and pull requests are welcome. For a focused change, include the affected screen, a short description of the behavior, and the validation command you ran.
 
-# ❓ FAQ
+1. Fork the repository.
+2. Create a focused branch.
+3. Run `npm run typecheck` and `npm run build`.
+4. Open a pull request with screenshots for visual changes.
 
-<details>
-<summary><b>Does Zot proxy API requests through a backend?</b></summary>
+## License
 
-No. Zot is designed as a client-side application. Requests are sent directly from the browser to the configured model endpoint.
-
-</details>
-
-<details>
-<summary><b>Where are API keys stored?</b></summary>
-
-API keys are stored locally in the browser and are only used with the provider endpoint configured by the user.
-
-</details>
-
-<details>
-<summary><b>Can Zot work without paid APIs?</b></summary>
-
-Yes. Zot can connect to local inference servers such as Ollama, LM Studio, and vLLM.
-
-</details>
-
-<details>
-<summary><b>What does zero-shot routing mean?</b></summary>
-
-The routing system does not require a separately trained classifier or task-specific fine-tuning. Prompt characteristics are evaluated dynamically during inference.
-
-</details>
-
-<details>
-<summary><b>Can custom models be added?</b></summary>
-
-Yes. Zot supports configurable OpenAI-compatible endpoints.
-
-</details>
-
----
-
-# 🔧 Troubleshooting
-
-### Ollama CORS Error
-
-```bash
-OLLAMA_ORIGINS=http://localhost:3000 ollama serve
-```
-
-### Local Model Not Appearing
-
-Check:
-
-```text
-✓ Ollama / server is running
-✓ Base URL ends with /v1
-✓ Model ID matches the server
-✓ Price is configured correctly
-```
-
-### Routing Ignores $0 Budget
-
-Make sure the local model has:
-
-```text
-Price / 1M tokens = 0.00
-```
-
-### Build Problems
-
-Use Node.js 20 LTS or newer:
-
-```bash
-node --version
-```
-
-Then reinstall:
-
-```bash
-rm -rf node_modules
-npm install
-```
-
-### GitHub Pages Blank Screen
-
-Verify that:
-
-```text
-✓ npm run build succeeds
-✓ dist/ contains the generated application
-✓ GitHub Pages serves the contents of dist/
-✓ Relative asset paths are configured
-```
-
----
-
-# 🤝 Contributing
-
-Contributions are welcome.
-
-### 1. Fork
-
-```bash
-git clone https://github.com/<your-username>/Zot.git
-
-cd Zot
-```
-
-### 2. Create a branch
-
-```bash
-git checkout -b feat/awesome-routing-heuristic
-```
-
-### 3. Install dependencies
-
-```bash
-npm install
-```
-
-### 4. Start development
-
-```bash
-npm run dev
-```
-
-### 5. Commit
-
-```bash
-git commit -m "feat(routing): improve model selection"
-```
-
-### 6. Push
-
-```bash
-git push origin feat/awesome-routing-heuristic
-```
-
-Then open a Pull Request.
-
----
-
-# 🔒 Security
-
-Zot follows a client-side architecture:
-
-* No central API proxy
-* API keys remain in browser storage
-* Requests go directly to configured providers
-* No API keys are embedded into the production build
-
-> ⚠️ Never hard-code provider API keys into the source code or production build.
-
-For production deployments, always prefer secure HTTPS endpoints.
-
----
-
-# 🙏 Acknowledgements
-
-* **Liquid AI** — LFM concepts inspiring the routing architecture
-* **React** — Frontend framework
-* **Vite** — Build tooling
-* **Tailwind CSS** — UI styling
-* **Lucide** — Interface icons
-* **Motion** — UI animation
-* **Recharts** — Data visualization
-* **Ollama** — Local model execution
-
----
-
-# 📄 License
-
-This project is licensed under the **MIT License**.
-
-See [`LICENSE`](LICENSE) for details.
-
----
-
-<div align="center">
-
-# ⚡ Zot
-
-### *Route smarter. Spend less. Break nothing.*
-
-<br>
-
-**Zero-shot routing · Token optimization · Model arbitration**
-
-<br>
-
-⭐ **Star the repository if Zot saves you tokens.**
-
-</div>
-
----
-
-<div align="center">
-
-## ☕ Support Zot
-
-If Zot is useful to you, consider buying me a coffee.
-
-<a href="https://buymeacoffee.com/nameisvignesh" target="_blank">
-  <img
-    src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png"
-    alt="Buy Me a Coffee"
-    height="60"
-  />
-</a>
-
-<br><br>
-
-*Your support helps fund new features, model integrations, research, and continued development.*
-
-</div>
-
----
+ZOT is released under the [MIT License](LICENSE).
