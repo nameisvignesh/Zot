@@ -81,33 +81,32 @@ export const LOCAL_LFM_MODEL: Model = {
   status: 'ready',
   latency_ms_avg: 220,
   tokens_per_sec: 90,
-  description: 'Offline Liquid AI LFM 2.5-230M checkpoint installed in the project workspace.',
+  description: 'LFM 2.5-230M local target. Configure a local inference runtime endpoint to generate responses.',
   device: 'auto (CUDA · Metal · CPU)',
   docs_url: 'https://huggingface.co/LiquidAI/LFM2.5-230M',
   created_at: '2026-10-22T00:00:00Z'
 };
 
 export const INITIAL_MODELS: Model[] = [
-  LOCAL_LFM_MODEL,
   {
-    id: 'lfm-local',
-    name: 'Liquid AI LFM 7B (Zero-Shot Core)',
-    provider: 'Liquid AI',
-    type: 'local',
+    id: 'openrouter-auto-free',
+    name: 'OpenRouter · Auto (Free)',
+    provider: 'OpenRouter',
+    type: 'api',
     tier: 'free',
     is_builtin: true,
-    endpoint: 'http://localhost:8000/v1/models/lfm-local',
+    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
     context_length: 32768,
     input_cost_per_1k: 0.0,
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: '100% Free Unlimited execution (LFM Core)',
-    enabled: true,
+    enabled: false,
     priority: 1,
     status: 'ready',
     latency_ms_avg: 280,
     tokens_per_sec: 78.5,
-    description: 'Liquid Foundation Model 7B — revolutionary dynamical architecture with constant memory & high throughput.',
+    description: 'Optional OpenRouter route. Add an API key in Models before use.',
     device: 'auto (cuda / metal / cpu)',
     docs_url: 'https://www.liquid.ai',
     created_at: '2026-08-15T08:00:00Z'
@@ -119,13 +118,13 @@ export const INITIAL_MODELS: Model[] = [
     type: 'local',
     tier: 'free',
     is_builtin: true,
-    endpoint: 'http://localhost:8000/v1/models/lfm-moe-3b',
+    endpoint: 'http://localhost:8000/v1/chat/completions',
     context_length: 16384,
     input_cost_per_1k: 0.0,
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Zero-shot dynamic prompt routing MoE',
-    enabled: true,
+    enabled: false,
     priority: 2,
     status: 'ready',
     latency_ms_avg: 140,
@@ -142,13 +141,13 @@ export const INITIAL_MODELS: Model[] = [
     type: 'local',
     tier: 'free',
     is_builtin: true,
-    endpoint: 'http://localhost:8000/v1/models/lfm-edge-1b',
+    endpoint: 'http://localhost:8000/v1/chat/completions',
     context_length: 8192,
     input_cost_per_1k: 0.0,
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Unlimited zero-cost edge execution',
-    enabled: true,
+    enabled: false,
     priority: 3,
     status: 'ready',
     latency_ms_avg: 90,
@@ -171,7 +170,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Free Hugging Face Community Serverless',
-    enabled: true,
+    enabled: false,
     priority: 4,
     status: 'ready',
     latency_ms_avg: 450,
@@ -194,7 +193,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Free Unlimited HF Serverless API',
-    enabled: true,
+    enabled: false,
     priority: 5,
     status: 'ready',
     latency_ms_avg: 390,
@@ -216,7 +215,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Free Unlimited Open Inference',
-    enabled: true,
+    enabled: false,
     priority: 6,
     status: 'ready',
     latency_ms_avg: 410,
@@ -238,7 +237,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Unlimited local or community execution',
-    enabled: true,
+    enabled: false,
     priority: 7,
     status: 'ready',
     latency_ms_avg: 380,
@@ -261,7 +260,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Free Developer Open Weights',
-    enabled: true,
+    enabled: false,
     priority: 8,
     status: 'ready',
     latency_ms_avg: 420,
@@ -283,7 +282,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Free Open Weight HF Tier',
-    enabled: true,
+    enabled: false,
     priority: 9,
     status: 'ready',
     latency_ms_avg: 310,
@@ -305,7 +304,7 @@ export const INITIAL_MODELS: Model[] = [
     output_cost_per_1k: 0.0,
     is_free: true,
     free_tier_limits: 'Free Serverless Community Queue',
-    enabled: true,
+    enabled: false,
     priority: 10,
     status: 'ready',
     latency_ms_avg: 620,
@@ -328,7 +327,7 @@ export const PAID_FRONTIER_MODELS: Model[] = [
     input_cost_per_1k: 0.0025,  // $2.50 / 1M tokens
     output_cost_per_1k: 0.0100, // $10.00 / 1M tokens
     is_free: false,
-    enabled: true,
+    enabled: false,
     priority: 1,
     status: 'ready',
     latency_ms_avg: 750,
@@ -348,7 +347,7 @@ export const PAID_FRONTIER_MODELS: Model[] = [
     input_cost_per_1k: 0.00015, // $0.15 / 1M tokens
     output_cost_per_1k: 0.00060, // $0.60 / 1M tokens
     is_free: false,
-    enabled: true,
+    enabled: false,
     priority: 2,
     status: 'ready',
     latency_ms_avg: 380,
@@ -368,7 +367,7 @@ export const PAID_FRONTIER_MODELS: Model[] = [
     input_cost_per_1k: 0.0150, // $15.00 / 1M tokens
     output_cost_per_1k: 0.0600, // $60.00 / 1M tokens
     is_free: false,
-    enabled: true,
+    enabled: false,
     priority: 3,
     status: 'ready',
     latency_ms_avg: 2400,
@@ -600,7 +599,7 @@ export const PAID_FRONTIER_MODELS: Model[] = [
 ];
 
 export const FREE_HF_UNLIMITED_MODELS: Model[] = [
-  ...INITIAL_MODELS
+  ...INITIAL_MODELS.filter(model => model.is_free)
 ];
 
 export const INITIAL_USER_ACCOUNT: UserAccount = {
@@ -766,7 +765,7 @@ export const DEFAULT_SETTINGS: ZotSettings = {
   min_similarity_threshold: 0.82,
   max_compression_limit: 0.65,
   auto_refine_on_run: true,
-  cost_currency: 'USD',
+  cost_currency: 'INR',
   currency_rates: {
     USD: 1.0,
     INR: 86.5,
@@ -779,6 +778,7 @@ export const DEFAULT_SETTINGS: ZotSettings = {
   retention_days: 30,
   simulation_speed: 'realistic',
   telemetry_auto_sync: true
+  ,monthly_cost_limit: 100
 };
 
 export const INITIAL_REQUEST_HISTORY: RequestRecord[] = [

@@ -16,6 +16,7 @@ export interface Model {
   name: string;
   provider: string;
   type: ModelType;
+  connection_mode?: 'local' | 'api';
   tier?: ModelTier;
   endpoint: string;
   context_length: number;
@@ -65,7 +66,7 @@ export interface ExecutionPlanStep {
   id: string;
   title: string;
   description: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'bypassed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'warning' | 'bypassed';
   durationMs?: number;
   outputSummary?: string;
 }
@@ -271,6 +272,7 @@ export interface ZotSettings {
   retention_days: number;
   simulation_speed: 'fast' | 'realistic' | 'instant';
   telemetry_auto_sync: boolean;
+  monthly_cost_limit: number;
 }
 
 export interface SamplePrompt {

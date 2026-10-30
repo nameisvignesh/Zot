@@ -23,7 +23,7 @@ export const DashboardView: React.FC = () => {
 
       <section className="dashboard-footer">
         <div>
-          <div className="eyebrow">{t('dashboard.builtBy')}</div>
+          <div className="eyebrow">Open-source project · Developed by Vignesh and Chat:)</div>
           <p>{t('dashboard.footer')}</p>
         </div>
         <div className="dashboard-footer-links">

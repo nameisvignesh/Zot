@@ -36,7 +36,7 @@ Route each prompt to the model that best matches its intent, complexity, context
 - [Using the application](#using-the-application)
 - [Provider and model setup](#provider-and-model-setup)
 - [Public model catalog](#public-model-catalog)
-- [Local LFM checkpoint](#local-lfm-checkpoint)
+- [Run LFM2.5-2.6B locally with Ollama](#run-lfm2526b-locally-with-ollama)
 - [Environment variables](#environment-variables)
 - [Project architecture](#project-architecture)
 - [Data and privacy](#data-and-privacy)
@@ -352,18 +352,42 @@ ZOT calculates prompt-specific token counts and estimated output tokens locally.
 
 If the catalog cannot be loaded, check the browser network connection, content-blocking extensions, and the provider's availability, then use **Refresh catalog**.
 
-## Local LFM checkpoint
+## Run LFM2.5-2.6B locally with Ollama
 
-The optional Liquid AI LFM 2.5-230M checkpoint can be placed in `LFM2.5-230M/`. The directory is ignored by Git because the model weights are large and belong to the upstream Hugging Face repository.
+ZOT connects to Ollama running on the same computer. Ollama downloads and runs the model; ZOT sends prompts to Ollama's local chat API.
 
-### Download with Git LFS
+1. **Install Ollama** from [ollama.com/download](https://ollama.com/download) and open it so its local service is running.
+2. **Set up and download the model** from a terminal:
 
-```bash
-git lfs install
-git clone https://huggingface.co/LiquidAI/LFM2.5-230M LFM2.5-230M
-```
+   ```bash
+   ollama run LiquidAI/lfm2.5-2.6b
+   ```
 
-The project can recognize the checkpoint as a local route target. The browser cannot execute the weights by itself; local chat generation requires an inference runtime that exposes a compatible endpoint, such as an application or service running on the user's machine. Without that runtime, configure an API model for generated chat responses.
+   Ollama downloads the model the first time and opens a terminal chat. You can use the model there. Exit the chat when you want to use ZOT; Ollama's service should remain running.
+
+3. **Use Ollama's local endpoint** in ZOT. The chat endpoint is:
+
+   ```text
+   http://localhost:11434/api/chat
+   ```
+
+   This is Ollama's local API endpoint; it does not require a hosted API key. Keep ZOT and Ollama on the same computer when using `localhost`.
+
+4. **Configure the model in ZOT.** Open **Models → Add custom model**, choose **Local**, and enter:
+
+   | Field | Value |
+   | --- | --- |
+   | Model name | `LFM2.5 2.6B` |
+   | Model ID | `LiquidAI/lfm2.5-2.6b:latest` |
+   | Provider | `Ollama` |
+   | URL endpoint | `http://localhost:11434/api/chat` |
+   | Context tokens | `131072` |
+
+   If your Ollama installation lists a different tag, use the exact name shown by `ollama list` for **Model ID**. Leave the API key empty.
+
+5. **Save and test the connection**, then select the model in Prompt Router or Playground to use it locally.
+
+If the connection test fails, check that Ollama is open, run `ollama list` to confirm the model is installed, and verify the endpoint is exactly `http://localhost:11434/api/chat`.
 
 ## Environment variables
 

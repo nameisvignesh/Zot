@@ -31,7 +31,7 @@ export function countTokens(text: string): number {
     }
   }
 
-  return Math.max(1, tokenCount);
+  return tokenCount;
 }
 
 /**
@@ -150,7 +150,7 @@ export function calculateSemanticSimilarity(orig: string, refined: string): numb
 
   // Composite semantic score
   const score = 0.3 * jaccard + 0.7 * recall;
-  return Math.min(1.0, Math.max(0.85, Number(score.toFixed(3))));
+  return Math.min(1.0, Math.max(0, Number(score.toFixed(3))));
 }
 
 /**
@@ -183,7 +183,7 @@ export function refinePrompt(
   const originalTokens = countTokens(prompt);
   const detectedConstraints = extractConstraints(prompt);
 
-  let text = prompt;
+  let text = prompt.trim();
   let politenessRemoved = 0;
 
   // 1. Handle common conversational loops and redundant greeting chatter
@@ -200,7 +200,7 @@ export function refinePrompt(
     /^(?:hey|hello|hi|good\s+morning|good\s+afternoon|good\s+evening)[,\s]+/i,
     /^(?:can\s+you\s+please|could\s+you\s+please|would\s+you\s+mind|please\s+kindly|i\s+would\s+like\s+you\s+to|i\s+need\s+you\s+to|can\s+you|could\s+you|please)\s+/i,
     /^(?:i\s+am\s+wondering\s+if\s+you\s+could|i\s+was\s+hoping\s+you\s+could|i\s+would\s+be\s+very\s+grateful\s+if\s+you\s+could)\s+/i,
-    /\b(?:please\s+and\s+thank\s+you|thank\s+you\s+very\s+much|thanks\s+in\s+advance|thanks)[,\.\!]*$/i,
+    /\b(?:as\s+detailed\s+as\s+possible|in\s+great\s+detail\s+so\s+that\s+i\s+can\s+understand)\b/i,
     /\b(?:as\s+detailed\s+as\s+possible|in\s+great\s+detail\s+so\s+that\s+i\s+can\s+understand)\b/i,
     /\b(?:so\s+that\s+a\s+beginner\s+can\s+understand\s+it\s+easily)\b/i,
     /\b(?:i\s+am\s+fine(?: so)? how are you(?: now)?\??)\b/i,
@@ -213,6 +213,7 @@ export function refinePrompt(
     if (pattern.test(text)) {
       politenessRemoved += 3;
       text = text.replace(pattern, (match) => {
+        if (/^\s*(?:as detailed|in great detail|so that a beginner)/i.test(match)) return ' ';
         if (/explain/i.test(match)) return 'Explain ';
         if (/provide/i.test(match)) return 'Provide ';
         if (/write|create/i.test(match)) return 'Create ';
@@ -299,6 +300,12 @@ export function refinePrompt(
   }
 
   const refinedTokens = countTokens(text);
+  const normalizedOriginal = prompt.toLowerCase().replace(/\s+/g, ' ').trim();
+  const normalizedRefined = text.toLowerCase().replace(/\s+/g, ' ').trim();
+  const constraintFailure = detectedConstraints.some(constraint => {
+    const value = constraint.text.trim().toLowerCase();
+    return value.length > 0 && !normalizedRefined.includes(value);
+  });
   const tokensSaved = Math.max(0, originalTokens - refinedTokens);
   const reductionPercentage = originalTokens > 0 
     ? Number(((tokensSaved / originalTokens) * 100).toFixed(1)) 
@@ -312,12 +319,12 @@ export function refinePrompt(
   let accepted = true;
   let rejectionReason: string | undefined;
 
-  if (refinedTokens >= originalTokens && originalTokens > 5) {
+  if (refinedTokens >= originalTokens && originalTokens > 0 && normalizedRefined !== normalizedOriginal) {
     accepted = false;
     rejectionReason = 'No token reduction achieved';
-  } else if (!allConstraintsPreserved && detectedConstraints.some(c => c.type === 'negative_instruction' && !c.preserved)) {
+  } else if (constraintFailure) {
     accepted = false;
-    rejectionReason = 'Crucial negative constraint (e.g. "Do not use...") was dropped by refiner';
+    rejectionReason = 'A detected constraint would be changed or dropped by the refiner';
   } else if (semanticSimilarity < similarityThreshold && !/^(?:hello|hi|hey|how are you)/i.test(prompt.trim())) {
     accepted = false;
     rejectionReason = `Semantic similarity score (${semanticSimilarity}) is below threshold (${similarityThreshold})`;

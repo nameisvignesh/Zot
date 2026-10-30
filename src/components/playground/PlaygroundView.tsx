@@ -31,11 +31,9 @@ export const PlaygroundView: React.FC = () => {
       const target = models.find(model => model.id === result.model_id);
       setMessages(current => [...current, { role: 'system', text: t('playground.routed', { model: result.model_name, task: result.task_type, confidence: Math.round(result.routing_decision.task_confidence * 100) }) }]);
       if (!target) throw new Error('No model was selected.');
-
-      const history: ChatTurn[] = [...messages.filter(item => item.role !== 'system').map(item => ({ role: item.role, content: item.text } as ChatTurn)), { role: 'user', content: outgoing }];
-      const response = await requestModelChat(target, history, settings.request_timeout_ms);
+      if (result.status === 'error') throw new Error(result.error_message || 'The selected model could not answer this message.');
       reportConnectionStatus('ready');
-      setMessages(current => [...current, { role: 'assistant', text: response.text }]);
+      setMessages(current => [...current, { role: 'assistant', text: result.response_text }]);
     } catch (error) {
       reportConnectionStatus('error');
       const code = error instanceof Error ? error.message : '';

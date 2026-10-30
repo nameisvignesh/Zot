@@ -29,6 +29,7 @@ import { countTokens, refinePrompt } from '../lib/tokenizer';
 import { routePrompt } from '../lib/routingEngine';
 import { translate } from '../lib/i18n';
 import { fetchPublicModelCatalog } from '../lib/publicModelCatalog';
+import { requestModelChat } from '../lib/modelClient';
 
 export type NavigationTab = 
   | 'dashboard'
@@ -44,7 +45,7 @@ export interface ExecutionPlanStep {
   id: string;
   title: string;
   description: string;
-  status: 'pending' | 'running' | 'completed' | 'skipped' | 'bypassed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'warning' | 'skipped' | 'bypassed';
   durationMs?: number;
   outputSummary?: string;
 }
@@ -68,9 +69,12 @@ interface ZotContextType {
   // Models
   models: Model[];
   paidModels: Model[];
+  modelToEditId: string | null;
+  requestModelEdit: (id: string) => void;
+  clearModelEdit: () => void;
   setModels: React.Dispatch<React.SetStateAction<Model[]>>;
   toggleModelEnabled: (id: string) => void;
-  updateModel: (model: Model) => void;
+  updateModel: (model: Model, previousId?: string) => void;
   addModel: (model: Omit<Model, 'created_at'>) => void;
   deleteModel: (id: string) => void;
   publicModels: Model[];
@@ -140,6 +144,8 @@ interface ZotContextType {
   // Formatting Helpers
   formatCurrency: (usdAmount: number) => string;
   convertCurrency: (usdAmount: number) => number;
+  canAffordRequest: (estimatedUsd: number) => boolean;
+  costLimitReached: boolean;
 }
 
 const ZotContext = createContext<ZotContextType | undefined>(undefined);
@@ -207,7 +213,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Settings State with theme support
   const [settings, setSettings] = useState<ZotSettings>(() => {
     const merged = getStoredValue<Partial<ZotSettings>>('zot_settings_v2', {}, isObjectRecord);
-    return { ...DEFAULT_SETTINGS, ...merged } as ZotSettings;
+    return { ...DEFAULT_SETTINGS, ...merged, cost_currency: merged.cost_currency || 'INR' } as ZotSettings;
   });
   const [settingsDraft, setSettingsDraft] = useState<ZotSettings>(() => settings);
 
@@ -235,12 +241,28 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Models State (Free division)
   const [models, setModels] = useState<Model[]>(() => {
-    const saved = getStoredValue<Model[]>('zot_models_v2', [LOCAL_LFM_MODEL], Array.isArray);
-    const configured = saved.filter(model => !model.is_builtin || model.id === LOCAL_LFM_MODEL.id);
-    return configured.some(model => model.id === LOCAL_LFM_MODEL.id)
-      ? configured
-      : [LOCAL_LFM_MODEL, ...configured];
+    const saved = getStoredValue<Model[]>('zot_models_v2', [], Array.isArray);
+    const configured = saved.filter(model => !model.is_builtin && model.endpoint !== LOCAL_LFM_MODEL.endpoint).map(model => {
+      const isLocalhost = model.endpoint.startsWith('http://localhost:11434/') || model.endpoint.startsWith('http://127.0.0.1:11434/');
+      const isGoogle = /google|gemini/i.test(model.provider);
+      const migrateGoogleEndpoint = isGoogle && model.endpoint.includes('openrouter.ai');
+      const id = migrateGoogleEndpoint ? model.id.replace(/^public:/, '').split('/').pop()!.replace(/^(gemini)-(\d+)-(\d+)(-.+)?$/, '$1-$2.$3$4') : model.id;
+      return {
+        ...model,
+        id,
+        endpoint: migrateGoogleEndpoint ? 'https://generativelanguage.googleapis.com/v1beta' : model.endpoint,
+        connection_mode: model.connection_mode || (model.type === 'local' ? 'local' : 'api'),
+        type: isLocalhost ? 'local' : model.type,
+      };
+    });
+    return configured;
   });
+  const [modelToEditId, setModelToEditId] = useState<string | null>(null);
+  const requestModelEdit = (id: string) => {
+    setModelToEditId(id);
+    setActiveTab('models');
+  };
+  const clearModelEdit = () => setModelToEditId(null);
 
   const [publicModels, setPublicModels] = useState<Model[]>([]);
   const [publicModelsLoading, setPublicModelsLoading] = useState(false);
@@ -256,7 +278,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Ignore records from models that were removed from the new minimal router.
     // This keeps the Analytics page aligned with the currently configured model registry.
-    return stored.filter(request => configuredModelIds.has(request.model_id));
+    return stored.filter(request => configuredModelIds.has(request.model_id) && !request.id.startsWith('req_01JZOT'));
   });
 
   const [activeRequest, setActiveRequest] = useState<RequestRecord | null>(null);
@@ -354,13 +376,16 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Hugging Face Connection handler (fetches free unlimited models)
   const connectHuggingFace = async (apiKey: string, username?: string): Promise<boolean> => {
-    await new Promise(r => setTimeout(r, 600));
     const cleanKey = apiKey.trim();
-    const uname = username?.trim() || (cleanKey.startsWith('hf_') ? 'hf_developer' : 'community_user');
+    if (!cleanKey.startsWith('hf_')) return false;
+    const response = await fetch('https://huggingface.co/api/whoami-v2', { headers: { Authorization: `Bearer ${cleanKey}` } });
+    if (!response.ok) return false;
+    const profile = await response.json();
+    const uname = username?.trim() || profile?.name || profile?.fullname || 'Hugging Face user';
     
     const newAuthState: HuggingFaceAuthState = {
       isConnected: true,
-      apiKey: cleanKey || 'hf_community_token_verified',
+      apiKey: cleanKey,
       username: uname,
       verifiedAt: new Date().toISOString(),
       onlyFreeUnlimitedModels: true,
@@ -389,8 +414,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const fetchFreeUnlimitedModels = async (): Promise<Model[]> => {
-    await new Promise(r => setTimeout(r, 450));
-    const freeOnly = FREE_HF_UNLIMITED_MODELS.filter(m => m.is_free && m.input_cost_per_1k === 0);
+    const freeOnly = FREE_HF_UNLIMITED_MODELS.filter(model => model.is_free && (model.type === 'local' || Boolean(model.api_key)));
     setModels(freeOnly);
     setHfAuthState(prev => ({ ...prev, availableFreeModelsCount: freeOnly.length }));
     return freeOnly;
@@ -400,8 +424,8 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setModels(prev => prev.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m));
   };
 
-  const updateModel = (updated: Model) => {
-    setModels(prev => prev.map(m => m.id === updated.id ? updated : m));
+  const updateModel = (updated: Model, previousId = updated.id) => {
+    setModels(prev => prev.map(m => m.id === previousId ? updated : m));
   };
 
   const addModel = (modelData: Omit<Model, 'created_at'>) => {
@@ -608,6 +632,23 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `$${value.toFixed(4)}`;
   };
 
+  const spendThisMonth = requests.reduce((sum, request) => {
+    const requestDate = new Date(request.timestamp);
+    const now = new Date();
+    return request.status === 'success' && requestDate.getFullYear() === now.getFullYear() && requestDate.getMonth() === now.getMonth()
+      ? sum + request.actual_cost
+      : sum;
+  }, 0);
+  const costLimitReached = convertCurrency(spendThisMonth) >= settings.monthly_cost_limit;
+  const canAffordRequest = (estimatedUsd: number) => convertCurrency(spendThisMonth + Math.max(0, estimatedUsd)) <= settings.monthly_cost_limit;
+  useEffect(() => {
+    if (typeof window === 'undefined' || !costLimitReached) return;
+    const alertKey = `zot-cost-limit-alert-${new Date().getFullYear()}-${new Date().getMonth()}`;
+    if (window.sessionStorage.getItem(alertKey) === 'shown') return;
+    window.sessionStorage.setItem(alertKey, 'shown');
+    window.alert(`Monthly cost limit reached. Current spend: ${formatCurrency(spendThisMonth)}.`);
+  }, [costLimitReached]);
+
   // "Plan multiple first and then execute" engine
   const runInference = async (params: {
     prompt: string;
@@ -618,6 +659,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userId?: string;
     onStreamChunk?: (chunk: string) => void;
   }): Promise<RequestRecord> => {
+    if (costLimitReached) throw new Error(`Monthly spending limit reached (${formatCurrency(spendThisMonth)} of ${formatCurrency(settings.monthly_cost_limit / (settings.currency_rates[settings.cost_currency] || 1))}). Increase the limit in Settings to continue.`);
     setIsExecuting(true);
     setStreamingOutput('');
     const startTime = performance.now();
@@ -647,8 +689,8 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       {
         id: 'plan_4_execute',
-        title: 'Step 4: Routing Decision Commit',
-        description: 'Commit the selected model and routing metadata without generating a model response',
+        title: 'Step 4: Model Execution',
+        description: 'Send the processed prompt to the selected configured model and capture its response',
         status: 'pending'
       },
       {
@@ -660,6 +702,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ];
 
     setExecutionPlan(initialPlan);
+    try {
 
     // Stage 1: Tokenization
     setExecutionPlan(prev => prev.map((s, idx) => idx === 0 ? { ...s, status: 'running' } : s));
@@ -685,28 +728,47 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Stage 3: Routing & Tier Selection
     setExecutionPlan(prev => prev.map((s, idx) => idx === 2 ? { ...s, status: 'running' } : s));
-    const targetPool = params.targetTier === 'paid' ? paidModels : models;
+    const targetPool = params.targetTier === 'paid'
+      ? paidModels.filter(model => model.enabled && model.status !== 'offline')
+      : models.filter(model => model.enabled && model.status !== 'offline');
     const routingDecision: RoutingDecision = routePrompt(processedPrompt, targetPool, params.preferredModelId);
-    let selectedModel = targetPool.find(m => m.id === routingDecision.selected_model) || targetPool[0];
+    let selectedModel = targetPool.find(m => m.id === routingDecision.selected_model);
     
     // If cascade is requested and complexity is very high, dispatch to frontier paid model
-    if (params.targetTier === 'cascade' && routingDecision.task_confidence < 0.75 && paidModels.length > 0) {
-      selectedModel = paidModels[0];
+    if (params.targetTier === 'cascade' && routingDecision.task_confidence < 0.75) {
+      selectedModel = paidModels.find(model => model.enabled && model.status !== 'offline') || selectedModel;
+    }
+    if (!selectedModel) {
+      setIsExecuting(false);
+      throw new Error('No enabled model is available. Configure and enable a model on the Models page.');
+    }
+    const inputEstimate = countTokens(processedPrompt) * selectedModel.input_cost_per_1k / 1000;
+    const outputEstimate = Math.max(50, Math.round(countTokens(processedPrompt) * 1.8)) * selectedModel.output_cost_per_1k / 1000;
+    if (!canAffordRequest(inputEstimate + outputEstimate)) {
+      setIsExecuting(false);
+      throw new Error(`This request may exceed the monthly spending limit of ${formatCurrency(settings.monthly_cost_limit / (settings.currency_rates[settings.cost_currency] || 1))}. Increase the limit in Settings to continue.`);
     }
     await new Promise(r => setTimeout(r, 70));
     setExecutionPlan(prev => prev.map((s, idx) => idx === 2 ? { ...s, status: 'completed', durationMs: 35, outputSummary: `${routingDecision.task} → ${selectedModel.name}` } : s));
 
-    // Stage 4: Routing-only dispatch. The router selects a target model but
-    // deliberately does not generate or stream an AI response.
+    // Stage 4: Generate a response with the selected provider/model.
     setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'running' } : s));
-    
-    const generatedResponse = '';
-    const outputTokens = 0;
-    const timeToFirstToken = 0;
-    
-    setStreamingOutput('');
-
-    setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'completed', durationMs: selectedModel.latency_ms_avg, outputSummary: 'Routing committed • No response generated' } : s));
+    let generatedResponse = '';
+    let outputTokens = 0;
+    let timeToFirstToken = 0;
+    let executionError = '';
+    try {
+      const modelResult = await requestModelChat(selectedModel, [{ role: 'user', content: processedPrompt }], settings.request_timeout_ms);
+      generatedResponse = modelResult.text;
+      outputTokens = countTokens(generatedResponse);
+      timeToFirstToken = modelResult.latencyMs;
+      setStreamingOutput(generatedResponse);
+      params.onStreamChunk?.(generatedResponse);
+      setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'completed', durationMs: modelResult.latencyMs, outputSummary: `${outputTokens} response tokens generated` } : s));
+    } catch (error) {
+      executionError = error instanceof Error ? error.message : 'The model request failed.';
+      setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'failed', outputSummary: executionError } : s));
+    }
 
     // Stage 5: Telemetry Sink
     setExecutionPlan(prev => prev.map((s, idx) => idx === 4 ? { ...s, status: 'running' } : s));
@@ -722,7 +784,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       task_type: routingDecision.task,
       original_prompt: params.prompt,
       refined_prompt: processedPrompt,
-      response_text: '',
+      response_text: generatedResponse,
       refine_enabled: params.refine,
       refiner_version: versionToUse,
       input_tokens: inputTokens,
@@ -735,20 +797,27 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       latency_ms: totalDuration,
       tokens_per_second: tokensPerSec,
       original_cost: selectedModel.is_free ? 0.0 : (originalTokens * selectedModel.input_cost_per_1k / 1000),
-      actual_cost: selectedModel.is_free ? 0.0 : (inputTokens * selectedModel.input_cost_per_1k / 1000 + outputTokens * selectedModel.output_cost_per_1k / 1000),
-      cost_saved: Number((tokensSaved * 0.00001).toFixed(6)),
+    actual_cost: selectedModel.type === 'local' ? 0 : (inputTokens * selectedModel.input_cost_per_1k / 1000 + outputTokens * selectedModel.output_cost_per_1k / 1000),
+      cost_saved: selectedModel.is_free ? 0 : Number((tokensSaved * selectedModel.input_cost_per_1k / 1000).toFixed(6)),
       currency: settings.cost_currency,
       routing_decision: routingDecision,
       semantic_similarity: refinementMetrics?.semantic_similarity ?? 1.0,
       constraints_preserved: refinementMetrics?.accepted ?? true,
-      status: 'success'
+      status: executionError ? 'error' : 'success',
+      ...(executionError ? { error_message: executionError } : {})
     };
 
     setRequests(prev => [newRecord, ...prev]);
     setLastExecutionMetrics(newRecord);
-    setExecutionPlan(prev => prev.map((s, idx) => idx === 4 ? { ...s, status: 'completed', durationMs: 12, outputSummary: `Saved ${tokensSaved} tokens • Zero-cost confirmed` } : s));
+    setExecutionPlan(prev => prev.map((s, idx) => idx === 4 ? { ...s, status: executionError ? 'warning' : 'completed', durationMs: 12, outputSummary: executionError ? `Request failed: ${executionError}` : `Saved ${tokensSaved} tokens` } : s));
     setIsExecuting(false);
     return newRecord;
+    } catch (error) {
+      setExecutionPlan(prev => prev.map(step => step.status === 'running' ? { ...step, status: 'failed', outputSummary: error instanceof Error ? error.message : 'Request failed.' } : step));
+      throw error;
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   return (
@@ -765,6 +834,9 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fetchFreeUnlimitedModels,
       models,
       paidModels,
+      modelToEditId,
+      requestModelEdit,
+      clearModelEdit,
       setModels,
       toggleModelEnabled,
       updateModel,
@@ -815,6 +887,8 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       logout,
       formatCurrency,
       convertCurrency
+      ,canAffordRequest,
+      costLimitReached
     }}>
       {children}
     </ZotContext.Provider>

@@ -16,7 +16,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   const codingMatches = codingKeywords.filter(k => p.includes(k)).length;
 
   // Reasoning / Math / Logic signals
-  const reasoningKeywords = ['why', 'how does', 'step by step', 'evaluate', 'compare', 'analyze', 'proof', 'deduce', 'solve', 'calculate', 'probability', 'trade-off', 'consequence'];
+  const reasoningKeywords = ['why', 'how', 'how does', 'step by step', 'evaluate', 'compare', 'analyze', 'proof', 'deduce', 'solve', 'calculate', 'probability', 'trade-off', 'consequence'];
   const reasoningMatches = reasoningKeywords.filter(k => p.includes(k)).length;
 
   // Summarization signals
@@ -40,7 +40,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   let maxScore = 0.35; // base threshold
 
   if (hasCodeBlock || codingMatches >= 1) {
-    const score = 0.5 + (hasCodeBlock ? 0.3 : 0) + (codingMatches * 0.15);
+    const score = Math.min(0.98, 0.5 + (hasCodeBlock ? 0.3 : 0) + (codingMatches * 0.08));
     if (score > maxScore) {
       maxScore = score;
       task = 'Coding';
@@ -48,7 +48,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   }
 
   if (summaryMatches >= 1) {
-    const score = 0.6 + summaryMatches * 0.2;
+    const score = Math.min(0.98, 0.6 + summaryMatches * 0.1);
     if (score > maxScore) {
       maxScore = score;
       task = 'Summarization';
@@ -56,7 +56,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   }
 
   if (extractionMatches >= 1) {
-    const score = 0.55 + extractionMatches * 0.2;
+    const score = Math.min(0.98, 0.55 + extractionMatches * 0.1);
     if (score > maxScore) {
       maxScore = score;
       task = 'Extraction';
@@ -64,7 +64,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   }
 
   if (creativeMatches >= 1) {
-    const score = 0.6 + creativeMatches * 0.2;
+    const score = Math.min(0.98, 0.6 + creativeMatches * 0.1);
     if (score > maxScore) {
       maxScore = score;
       task = 'Creative Writing';
@@ -72,7 +72,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   }
 
   if (classMatches >= 1) {
-    const score = 0.65 + classMatches * 0.2;
+    const score = Math.min(0.98, 0.65 + classMatches * 0.1);
     if (score > maxScore) {
       maxScore = score;
       task = 'Classification';
@@ -80,7 +80,7 @@ export function classifyPrompt(prompt: string): { task: TaskCategory; confidence
   }
 
   if (reasoningMatches >= 1 && task === 'General Question') {
-    const score = 0.5 + reasoningMatches * 0.15;
+    const score = Math.min(0.92, 0.5 + reasoningMatches * 0.08);
     if (score > maxScore) {
       maxScore = score;
       task = 'Reasoning';
@@ -128,10 +128,10 @@ export function routePrompt(
       task,
       task_confidence: confidence,
       complexity,
-      selected_model: 'lfm-local',
+      selected_model: '',
       alternative_models: [],
-      reason: 'fallback_no_active_models',
-      estimated_cost: 0.001
+      reason: 'no_active_models',
+      estimated_cost: 0
     };
   }
 
@@ -156,18 +156,21 @@ export function routePrompt(
     } else if (complexity > 0.65) {
       // Capability match for advanced reasoning/coding - prefer high throughput models
       selectedModel = [...enabledModels].sort((a, b) => {
-        // Prefer free models with high tokens_per_sec for complex tasks
+        // Prefer capable models with enough context; cost and latency break ties.
+        const capabilityA = a.context_length >= tokenCount ? 1 : 0;
+        const capabilityB = b.context_length >= tokenCount ? 1 : 0;
+        if (capabilityA !== capabilityB) return capabilityB - capabilityA;
         if (a.is_free !== b.is_free) return a.is_free ? -1 : 1;
-        return b.tokens_per_sec - a.tokens_per_sec;
+        return a.priority - b.priority || a.latency_ms_avg - b.latency_ms_avg;
       })[0];
       reason = `capability_match (${task} with complexity ${complexity})`;
     } else if (complexity < 0.35) {
       // Low complexity optimization (fastest, lowest cost)
       // Prefer free local models with lowest latency
       selectedModel = [...enabledModels].sort((a, b) => {
-        if (a.is_free !== b.is_free) return a.is_free ? -1 : 1;
-        if (a.type !== b.type) return a.type === 'local' ? -1 : 1;
-        return a.latency_ms_avg - b.latency_ms_avg;
+        const costA = a.input_cost_per_1k + a.output_cost_per_1k;
+        const costB = b.input_cost_per_1k + b.output_cost_per_1k;
+        return costA - costB || a.latency_ms_avg - b.latency_ms_avg || a.priority - b.priority;
       })[0];
       reason = 'cost_latency_optimization (low complexity task)';
     } else {
