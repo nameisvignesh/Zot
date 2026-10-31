@@ -1,5 +1,5 @@
-import React from 'react';
-import { BarChart3, Bot, Gauge, Home, KeyRound, ListChecks, MessageSquare, Settings2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { BarChart3, Bot, Gauge, Home, KeyRound, ListChecks, MessageSquare, Settings2, Menu, X } from 'lucide-react';
 import { NavigationTab, useZot } from '../../context/ZotContext';
 
 const NAV_ITEMS: Array<{ id: NavigationTab; key: string; icon: React.ElementType }> = [
@@ -15,12 +15,14 @@ const NAV_ITEMS: Array<{ id: NavigationTab; key: string; icon: React.ElementType
 
 export const Navigation: React.FC = () => {
   const { activeTab, requestNavigation, t } = useZot();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <nav className="nav-strip" aria-label="Primary navigation">
+      <div className="mobile-nav-bar"><span>Menu</span><button className="button mobile-nav-toggle" aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileOpen} onClick={() => setMobileOpen(value => !value)}>{mobileOpen ? <X size={18} /> : <Menu size={18} />}</button></div>
       <div className="nav-inner">
         {NAV_ITEMS.map(({ id, key, icon: Icon }) => (
-          <button key={id} onClick={() => requestNavigation(id)} className={activeTab === id ? 'nav-item active' : 'nav-item'}>
+          <button key={id} onClick={() => { requestNavigation(id); setMobileOpen(false); }} className={activeTab === id ? 'nav-item active' : 'nav-item'}>
             <Icon size={15} />
             <span>{t(key)}</span>
           </button>

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3, Download, FileText, Table2, TrendingUp } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 type AnalyticsMode = 'charts' | 'table';
 type ChartMetric = 'tokens' | 'latency' | 'cost';
@@ -10,6 +10,7 @@ export const AnalyticsView: React.FC = () => {
   const { requests, models, formatCurrency, t } = useZot();
   const [mode, setMode] = useState<AnalyticsMode>('charts');
   const [chartMetric, setChartMetric] = useState<ChartMetric>('tokens');
+  const [selectedModelId, setSelectedModelId] = useState('all');
   const totalTokens = requests.reduce((sum, request) => sum + request.total_tokens, 0);
   const totalSaved = requests.reduce((sum, request) => sum + request.tokens_saved, 0);
   const avgLatency = requests.length ? Math.round(requests.reduce((sum, request) => sum + request.latency_ms, 0) / requests.length) : 0;
@@ -23,20 +24,26 @@ export const AnalyticsView: React.FC = () => {
     return { model, requests: modelRequests.length, tokens: totalModelTokens, cost: totalModelCost, latency: modelLatency };
   }), [models, requests]);
 
-  const chartPoints = requests.slice(0, 8).reverse().map(request => ({
-    label: request.model_name,
+  const chartRequests = requests.filter(request => selectedModelId === 'all' || request.model_id === selectedModelId).slice(0, 8).reverse();
+  const chartPoints = chartRequests.map(request => ({
+    label: new Date(request.timestamp).toLocaleString(),
+    model: request.model_name,
+    tokens: request.total_tokens,
+    latency: request.latency_ms,
+    cost: request.actual_cost,
     value: chartMetric === 'tokens' ? request.total_tokens : chartMetric === 'latency' ? request.latency_ms : request.actual_cost,
   }));
 
   const exportCsv = () => {
-    const header = ['timestamp', 'prompt', 'task', 'model', 'input_tokens', 'output_tokens', 'tokens_saved', 'latency_ms', 'estimated_cost', 'status'];
-    const rows = requests.map(request => [request.timestamp, request.original_prompt, request.task_type, request.model_name, request.input_tokens, request.output_tokens, request.tokens_saved, request.latency_ms, request.actual_cost, request.status]);
-    const csv = [header, ...rows].map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
+    const header = ['request_id', 'timestamp', 'prompt', 'task', 'model_id', 'model', 'original_tokens', 'input_tokens', 'output_tokens', 'total_tokens', 'tokens_saved', 'reduction_percentage', 'time_to_first_token_ms', 'latency_ms', 'tokens_per_second', 'original_cost', 'actual_cost', 'cost_saved', 'currency', 'semantic_similarity', 'constraints_preserved', 'status', 'error_message'];
+    const rows = requests.map(request => [request.id, request.timestamp, request.original_prompt, request.task_type, request.model_id, request.model_name, request.original_tokens, request.input_tokens, request.output_tokens, request.total_tokens, request.tokens_saved, request.reduction_percentage, request.time_to_first_token_ms, request.latency_ms, request.tokens_per_second, request.original_cost, request.actual_cost, request.cost_saved, request.currency, request.semantic_similarity, request.constraints_preserved, request.status, request.error_message || '']);
+    const csv = '\uFEFF' + [header, ...rows].map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n');
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const objectUrl = link.href;
     link.download = `zot-telemetry-${Date.now()}.csv`;
     link.click();
-    URL.revokeObjectURL(link.href);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
   return (
@@ -46,7 +53,47 @@ export const AnalyticsView: React.FC = () => {
       <div className="metric-grid"><div className="metric"><div className="metric-label">{t('analytics.requests')}</div><div className="metric-value">{requests.length}</div><div className="metric-note">{t('analytics.routingDecisions')}</div></div><div className="metric"><div className="metric-label">{t('analytics.successRate')}</div><div className="metric-value">{successRate}%</div><div className="metric-note">{t('analytics.completedRoutes')}</div></div><div className="metric"><div className="metric-label">{t('analytics.tokens')}</div><div className="metric-value">{totalTokens.toLocaleString()}</div><div className="metric-note">{t('analytics.saved', { value: totalSaved.toLocaleString() })}</div></div><div className="metric"><div className="metric-label">{t('analytics.averageLatency')}</div><div className="metric-value">{avgLatency}ms</div><div className="metric-note">{t('analytics.routeEstimate')}</div></div></div>
 
       {mode === 'charts' ? <>
-        <div className="panel"><div className="panel-header"><div><div className="panel-title flex items-center gap-2"><TrendingUp size={15} className="accent" /> {t('analytics.tokenGraph')}</div><div className="panel-subtitle">{t('analytics.recentRequests')}</div></div><div className="segmented"><button className={chartMetric === 'tokens' ? 'active' : ''} onClick={() => setChartMetric('tokens')}>{t('analytics.metricTokens')}</button><button className={chartMetric === 'latency' ? 'active' : ''} onClick={() => setChartMetric('latency')}>{t('analytics.metricLatency')}</button><button className={chartMetric === 'cost' ? 'active' : ''} onClick={() => setChartMetric('cost')}>{t('analytics.metricCost')}</button></div></div><div className="panel-body"><div className="chart-line">{chartPoints.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartPoints} margin={{ top: 12, right: 18, bottom: 8, left: 0 }}><CartesianGrid stroke="#282a2e" strokeDasharray="3 4" vertical={false} /><XAxis dataKey="label" hide /><YAxis width={48} tick={{ fill: '#8b919a', fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ background: '#15171a', border: '1px solid #303239', borderRadius: 8, color: '#fff' }} formatter={(value: number) => [chartMetric === 'cost' ? formatCurrency(value) : value, chartMetric]} labelFormatter={label => String(label)} /><Line type="monotone" dataKey="value" stroke="#e2a640" strokeWidth={2.5} dot={{ r: 3, fill: '#e2a640', stroke: '#111' }} activeDot={{ r: 5 }} /></LineChart></ResponsiveContainer> : <div className="empty-state w-full">{t('analytics.noTelemetry')}</div>}</div></div></div>
+        <div className="panel">
+          <div className="panel-header">
+            <div>
+              <div className="panel-title flex items-center gap-2"><TrendingUp size={15} className="accent" /> {t('analytics.tokenGraph')}</div>
+              <div className="panel-subtitle">Each point is one recorded request; hover to see tokens, latency, and cost together.</div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <select className="select max-w-[240px]" aria-label="Filter graph by model" value={selectedModelId} onChange={event => setSelectedModelId(event.target.value)}>
+                <option value="all">All models</option>
+                {Array.from(new Map([...models.map(model => [model.id, model.name] as const), ...requests.map(request => [request.model_id, request.model_name] as const)]).entries()).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+              <div className="segmented">
+                <button className={chartMetric === 'tokens' ? 'active' : ''} onClick={() => setChartMetric('tokens')}>{t('analytics.metricTokens')}</button>
+                <button className={chartMetric === 'latency' ? 'active' : ''} onClick={() => setChartMetric('latency')}>{t('analytics.metricLatency')}</button>
+                <button className={chartMetric === 'cost' ? 'active' : ''} onClick={() => setChartMetric('cost')}>{t('analytics.metricCost')}</button>
+              </div>
+            </div>
+          </div>
+          <div className="panel-body">
+            <div className="chart-line">
+              {chartPoints.length ? <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartPoints} margin={{ top: 18, right: 24, bottom: 20, left: 4 }}>
+                  <CartesianGrid stroke="#282a2e" strokeDasharray="3 4" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: '#8b919a', fontSize: 9 }} axisLine={false} tickLine={false} minTickGap={32} />
+                  <YAxis width={58} tick={{ fill: '#8b919a', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ background: '#15171a', border: '1px solid #303239', borderRadius: 8, color: '#fff' }}
+                    labelFormatter={(label, payload) => payload?.[0]?.payload?.model ? `${payload[0].payload.model} · ${String(label)}` : String(label)}
+                    formatter={(_value: number, _name: string, item: any) => {
+                      const point = item.payload;
+                      return [`${point.tokens.toLocaleString()} tokens · ${point.latency.toLocaleString()} ms · ${formatCurrency(point.cost)}`, 'Request'];
+                    }}
+                  />
+                  <Line type="linear" dataKey="value" name={chartMetric} stroke="#e2a640" strokeWidth={2.5} dot={{ r: 4, fill: '#e2a640', stroke: '#111' }} activeDot={{ r: 6 }}>
+                    <LabelList dataKey="value" position="top" formatter={(value: number) => chartMetric === 'cost' ? formatCurrency(value) : value.toLocaleString()} style={{ fill: '#e5e7eb', fontSize: 10 }} />
+                  </Line>
+                </LineChart>
+              </ResponsiveContainer> : <div className="empty-state w-full">{t('analytics.noTelemetry')}</div>}
+            </div>
+          </div>
+        </div>
         <div className="panel"><div className="panel-header"><div className="panel-title">{t('analytics.modelPerformance')}</div></div><div className="table-wrap"><PerformanceTable rows={modelPerformance} formatCurrency={formatCurrency} t={t} /></div></div>
       </> : <div className="panel"><div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Table2 size={15} className="accent" /> {t('analytics.table')}</div><div className="panel-subtitle">{t('analytics.tableNote')}</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>{t('analytics.time')}</th><th>{t('analytics.task')}</th><th>{t('analytics.model')}</th><th>{t('analytics.tokens')}</th><th>{t('analytics.latency')}</th><th>{t('analytics.cost')}</th><th>{t('analytics.status')}</th></tr></thead><tbody>{requests.map(request => <tr key={request.id}><td>{new Date(request.timestamp).toLocaleString()}</td><td>{request.task_type}</td><td>{request.model_name}</td><td>{request.input_tokens} in / {request.output_tokens} out</td><td>{request.latency_ms}ms</td><td>{formatCurrency(request.actual_cost)}</td><td><span className={request.status === 'success' ? 'badge success' : 'badge danger'}>{request.status}</span></td></tr>)}</tbody></table>{requests.length === 0 && <div className="empty-state"><FileText size={18} /> {t('analytics.noRecords')}</div>}</div></div>}
     </div>

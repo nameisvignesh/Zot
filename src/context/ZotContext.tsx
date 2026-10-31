@@ -109,7 +109,7 @@ interface ZotContextType {
   gatewayStatus: 'ready' | 'connecting' | 'error';
   gatewayPingMs: number;
   testGatewayConnection: () => Promise<void>;
-  reportConnectionStatus: (status: 'ready' | 'error') => void;
+  reportConnectionStatus: (status: 'ready' | 'connecting' | 'error') => void;
   
   // Execution Engine & Multi-step Planner
   isExecuting: boolean;
@@ -300,12 +300,23 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [authModalMode, setAuthModalMode] = useState<'signIn' | 'signUp' | 'profile'>('signIn');
 
   const [activeRefinerVersion, setActiveRefinerVersion] = useState<RefinerVersionId>(settings.default_refiner);
-  const [gatewayStatus, setGatewayStatus] = useState<'ready' | 'connecting' | 'error'>('ready');
+  const [gatewayStatus, setGatewayStatus] = useState<'ready' | 'connecting' | 'error'>('connecting');
   const [gatewayPingMs, setGatewayPingMs] = useState<number>(3);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [streamingOutput, setStreamingOutput] = useState<string>('');
   const [lastExecutionMetrics, setLastExecutionMetrics] = useState<RequestRecord | null>(null);
   const [executionPlan, setExecutionPlan] = useState<ExecutionPlanStep[]>([]);
+
+  useEffect(() => {
+    const onError = () => setGatewayStatus('error');
+    const onRejection = () => setGatewayStatus('error');
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejection);
+    };
+  }, []);
 
   // Apply dynamic theme to root element
   const setTheme = (newTheme: ThemeId) => {
@@ -378,10 +389,23 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const connectHuggingFace = async (apiKey: string, username?: string): Promise<boolean> => {
     const cleanKey = apiKey.trim();
     if (!cleanKey.startsWith('hf_')) return false;
-    const response = await fetch('https://huggingface.co/api/whoami-v2', { headers: { Authorization: `Bearer ${cleanKey}` } });
-    if (!response.ok) return false;
-    const profile = await response.json();
-    const uname = username?.trim() || profile?.name || profile?.fullname || 'Hugging Face user';
+    let response: Response;
+    try {
+      response = await fetch('https://router.huggingface.co/v1/models', { headers: { Authorization: `Bearer ${cleanKey}`, Accept: 'application/json' } });
+    } catch {
+      throw new Error('Could not reach Hugging Face. Check your connection and whether the browser allows the request.');
+    }
+    if (!response.ok) {
+      const body = await response.text();
+      let detail = body;
+      try {
+        const parsed = JSON.parse(body);
+        detail = parsed.error || parsed.message || body;
+      } catch { /* Keep a plain-text provider response as the error detail. */ }
+      throw new Error(`Hugging Face token check failed (${response.status}): ${detail.slice(0, 240) || response.statusText}`);
+    }
+    await response.json();
+    const uname = username?.trim() || 'Hugging Face user';
     
     const newAuthState: HuggingFaceAuthState = {
       isConnected: true,
@@ -421,14 +445,17 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleModelEnabled = (id: string) => {
+    setGatewayStatus('connecting');
     setModels(prev => prev.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m));
   };
 
   const updateModel = (updated: Model, previousId = updated.id) => {
+    setGatewayStatus('connecting');
     setModels(prev => prev.map(m => m.id === previousId ? updated : m));
   };
 
   const addModel = (modelData: Omit<Model, 'created_at'>) => {
+    setGatewayStatus('connecting');
     const newModel: Model = {
       ...modelData,
       created_at: new Date().toISOString()
@@ -442,6 +469,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteModel = (id: string) => {
+    setGatewayStatus('connecting');
     setModels(prev => prev.filter(m => m.id !== id));
   };
 
@@ -600,7 +628,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setGatewayStatus('ready');
   };
 
-  const reportConnectionStatus = (status: 'ready' | 'error') => setGatewayStatus(status);
+  const reportConnectionStatus = (status: 'ready' | 'connecting' | 'error') => setGatewayStatus(status);
 
   // Currency Converter
   const convertCurrency = (usdAmount: number): number => {
@@ -807,6 +835,7 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...(executionError ? { error_message: executionError } : {})
     };
 
+    setGatewayStatus(executionError ? 'error' : 'ready');
     setRequests(prev => [newRecord, ...prev]);
     setLastExecutionMetrics(newRecord);
     setExecutionPlan(prev => prev.map((s, idx) => idx === 4 ? { ...s, status: executionError ? 'warning' : 'completed', durationMs: 12, outputSummary: executionError ? `Request failed: ${executionError}` : `Saved ${tokensSaved} tokens` } : s));

@@ -42,6 +42,7 @@ const MainContent: React.FC = () => {
         {activeTab === 'settings' && <SettingsView />}
         {activeTab === 'playground' && <PlaygroundView />}
       </main>
+      <footer className="app-footer"><div><strong>ZOT · Zero-Shot Prompt Routing System</strong><span>Developed by Vignesh and Chat:) · Open source project</span></div><div className="app-footer-links"><a href="https://github.com/nameisvignesh/Zot" target="_blank" rel="noreferrer">GitHub</a><a href="https://github.com/nameisvignesh/Zot/blob/main/README.md" target="_blank" rel="noreferrer">README</a><a href="https://github.com/nameisvignesh/Zot/blob/main/LICENSE" target="_blank" rel="noreferrer">License</a></div></footer>
       <button className="page-jump" aria-label={atBottom ? 'Scroll to top' : 'Scroll to bottom'} title={atBottom ? 'Scroll to top' : 'Scroll to bottom'} onClick={() => window.scrollTo({ top: atBottom ? 0 : document.documentElement.scrollHeight, behavior: 'smooth' })}>{atBottom ? <ArrowUp size={18} /> : <ArrowDown size={18} />}</button>
     </div>
   );

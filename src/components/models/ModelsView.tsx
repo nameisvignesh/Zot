@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, KeyRound, Pencil, Plus, RefreshCw, Trash2, Wifi } from 'lucide-react';
+import { ExternalLink, KeyRound, Pencil, Plus, RefreshCw, Trash2, Wifi, Search } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { Model } from '../../types';
-import { normalizeModelEndpoint, testModelConnection } from '../../lib/modelClient';
+import { discoverProviderModels, normalizeModelEndpoint, testModelConnection } from '../../lib/modelClient';
 
 interface ModelTemplate {
   id: string;
@@ -59,14 +59,17 @@ export const ModelsView: React.FC = () => {
   const [connectionMessages, setConnectionMessages] = useState<Record<string, string>>({});
   const [catalogQuery, setCatalogQuery] = useState('');
   const [modelView, setModelView] = useState<'local' | 'api' | 'all'>('all');
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [discoveryMessage, setDiscoveryMessage] = useState('');
+  const [discoveringModels, setDiscoveringModels] = useState(false);
 
   const clearForm = () => {
-    setEditingModel(null); setSelectedTemplate(null); setName(''); setProvider(''); setModelId(''); setApiKey(''); setEndpoint(''); setContext('8192'); setLatency('500'); setInputCost('0'); setOutputCost('0'); setConnectionMode('api');
+    setEditingModel(null); setSelectedTemplate(null); setName(''); setProvider(''); setModelId(''); setApiKey(''); setEndpoint(''); setContext('8192'); setLatency('500'); setInputCost('0'); setOutputCost('0'); setConnectionMode('api'); setAvailableModels([]); setDiscoveryMessage('');
   };
 
   const openForm = (template?: ModelTemplate) => {
     clearForm();
-    if (template) {
+      if (template) {
       setConnectionMode('api');
       setSelectedTemplate(template); setName(template.name); setProvider(template.provider); setModelId(template.id); setEndpoint(template.endpoint); setContext(String(template.context)); setLatency(String(template.latency));
     }
@@ -96,6 +99,11 @@ export const ModelsView: React.FC = () => {
     clearModelEdit();
   }, [modelToEditId]);
 
+  useEffect(() => {
+    setConnectionStates({});
+    setConnectionMessages({});
+  }, [models]);
+
   const openPublicModel = (model: Model) => {
     clearForm();
     setName(model.name);
@@ -120,14 +128,32 @@ export const ModelsView: React.FC = () => {
     const outCost = Number(outputCost) || 0;
     const normalizedEndpoint = normalizeModelEndpoint(endpoint, provider);
     const modelData = {
-      id: modelId.trim(), name: name.trim(), provider: provider.trim() || (connectionMode === 'local' ? 'Local runtime' : 'Custom provider'), type: connectionMode, connection_mode: connectionMode, tier: (inCost + outCost === 0 ? 'free' : 'paid'), endpoint: normalizedEndpoint, context_length: Number(context) || 8192, input_cost_per_1k: inCost, output_cost_per_1k: outCost, is_free: inCost + outCost === 0, enabled: true, priority: models.length + 1, status: 'ready', latency_ms_avg: Number(latency) || 500, tokens_per_sec: 40, description: selectedTemplate?.description || editingModel?.description || `Configured ${connectionMode} model: ${name.trim()}.`, api_key: apiKey.trim(), api_key_label: apiKey.trim() ? 'Stored locally' : undefined, docs_url: selectedTemplate?.docsUrl || editingModel?.docs_url,
+      id: modelId.trim(), name: name.trim(), provider: provider.trim() || (connectionMode === 'local' ? 'Local runtime' : 'Custom provider'), type: connectionMode, connection_mode: connectionMode, tier: (inCost + outCost === 0 ? 'free' : 'paid'), endpoint: normalizedEndpoint, context_length: Number(context) || 8192, input_cost_per_1k: inCost, output_cost_per_1k: outCost, is_free: inCost + outCost === 0, enabled: true, priority: models.length + 1, status: 'ready', latency_ms_avg: Number(latency) || 500, tokens_per_sec: 40, description: selectedTemplate?.description || editingModel?.description || `Configured ${connectionMode} model: ${name.trim()}.`, api_key: connectionMode === 'api' ? apiKey.trim() : '', api_key_label: connectionMode === 'api' && apiKey.trim() ? 'Stored locally' : undefined, docs_url: selectedTemplate?.docsUrl || editingModel?.docs_url,
     } as Omit<Model, 'created_at'>;
     if (editingModel) {
-      updateModel({ ...editingModel, ...modelData, tier: editingModel.tier, is_free: editingModel.is_free, input_cost_per_1k: editingModel.input_cost_per_1k, output_cost_per_1k: editingModel.output_cost_per_1k, enabled: editingModel.enabled, priority: editingModel.priority, created_at: editingModel.created_at }, editingModel.id);
+      const previousId = editingModel.id;
+      const nextModel = { ...editingModel, ...modelData, tier: editingModel.tier, is_free: editingModel.is_free, input_cost_per_1k: editingModel.input_cost_per_1k, output_cost_per_1k: editingModel.output_cost_per_1k, enabled: editingModel.enabled, priority: editingModel.priority, created_at: editingModel.created_at };
+      updateModel(nextModel, previousId);
     } else {
       addModel(modelData);
     }
     clearForm(); setShowForm(false);
+  };
+
+  const findModels = async () => {
+    setDiscoveryMessage('');
+    setDiscoveringModels(true);
+    try {
+      const found = await discoverProviderModels(provider, endpoint, apiKey);
+      setAvailableModels(found);
+      setDiscoveryMessage(`${found.length} models found. This list does not confirm billing or inference access.`);
+      if (found.length === 1) { setModelId(found[0].id); setName(found[0].name); }
+    } catch (error) {
+      setAvailableModels([]);
+      setDiscoveryMessage(error instanceof Error ? error.message : 'Could not load models for this key.');
+    } finally {
+      setDiscoveringModels(false);
+    }
   };
 
   const visiblePublicModels = publicModels.filter(model => `${model.name} ${model.provider} ${model.id}`.toLowerCase().includes(catalogQuery.toLowerCase()));
@@ -137,7 +163,10 @@ export const ModelsView: React.FC = () => {
     let result: { ok: boolean; message: string };
     try { result = await testModelConnection(model); }
     catch (error) { result = { ok: false, message: error instanceof Error ? error.message : 'The connection test failed.' }; }
-    reportConnectionStatus(result.ok ? 'ready' : 'error');
+    const otherEnabledModels = models.filter(item => item.enabled && item.id !== model.id);
+    const hasOtherFailure = otherEnabledModels.some(item => connectionStates[item.id] === 'error');
+    const allOthersVerified = otherEnabledModels.every(item => connectionStates[item.id] === 'success');
+    reportConnectionStatus(!result.ok || hasOtherFailure ? 'error' : allOthersVerified ? 'ready' : 'connecting');
     setConnectionStates(current => ({ ...current, [model.id]: result.ok ? 'success' : 'error' }));
     setConnectionMessages(current => ({ ...current, [model.id]: result.message }));
   };
@@ -148,8 +177,8 @@ export const ModelsView: React.FC = () => {
 
       <div className="panel"><div className="panel-header"><div><div className="panel-title">Models</div><div className="panel-subtitle">Choose which connection type to view</div></div><div className="segmented"><button className={modelView === 'all' ? 'active' : ''} onClick={() => setModelView('all')}>All</button><button className={modelView === 'local' ? 'active' : ''} onClick={() => setModelView('local')}>Local</button><button className={modelView === 'api' ? 'active' : ''} onClick={() => setModelView('api')}>Configured</button></div></div></div>
 
-      {modelView !== 'api' && <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('models.local')}</div><div className="panel-subtitle">{t('models.localUsed')}</div></div><span className="badge warn">Local runtime</span></div><div className="panel-body">{models.length === 0 && <div className="local-checkpoint">{t('models.checkpoint')}</div>}{models.filter(model => model.type === 'local').map(model => <ModelRow key={model.id} model={model} onEdit={() => openEdit(model)} onToggle={() => toggleModelEnabled(model.id)} onDelete={() => deleteModel(model.id)} onTest={() => testConnection(model)} state={connectionStates[model.id] || 'idle'} message={connectionMessages[model.id]} formatCurrency={formatCurrency} t={t} />)}{models.length > 0 && models.every(model => model.type !== 'local') && <div className="empty-state">No local models configured.</div>}</div></div>}
-      {modelView !== 'local' && <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('models.api')}</div><div className="panel-subtitle">{t('models.keysNote')}</div></div><span className="badge">{t('models.configured', { value: models.filter(model => model.type === 'api').length })}</span></div><div className="panel-body space-y-3">{models.filter(model => model.type === 'api').map(model => <ModelRow key={model.id} model={model} onEdit={() => openEdit(model)} onToggle={() => toggleModelEnabled(model.id)} onDelete={() => deleteModel(model.id)} onTest={() => testConnection(model)} state={connectionStates[model.id] || 'idle'} message={connectionMessages[model.id]} formatCurrency={formatCurrency} t={t} />)}{models.every(model => model.type !== 'api') && <div className="empty-state">{t('models.noneConfigured')}</div>}</div></div>}
+      {modelView !== 'api' && <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('models.local')}</div><div className="panel-subtitle">{t('models.localUsed')}</div></div><span className="badge warn">Local runtime</span></div><div className="panel-body">{models.length === 0 && <div className="local-checkpoint">{t('models.checkpoint')}</div>}{models.filter(model => model.type === 'local').map(model => <ModelRow key={model.id} model={model} onEdit={() => openEdit(model)} onToggle={() => toggleModelEnabled(model.id)} onDelete={() => { if (window.confirm(`Delete “${model.name}” from your configured models? This removes its saved settings from this browser.`)) deleteModel(model.id); }} onTest={() => testConnection(model)} state={connectionStates[model.id] || 'idle'} message={connectionMessages[model.id]} formatCurrency={formatCurrency} t={t} />)}{models.length > 0 && models.every(model => model.type !== 'local') && <div className="empty-state">No local models configured.</div>}</div></div>}
+      {modelView !== 'local' && <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('models.api')}</div><div className="panel-subtitle">{t('models.keysNote')}</div></div><span className="badge">{t('models.configured', { value: models.filter(model => model.type === 'api').length })}</span></div><div className="panel-body space-y-3">{models.filter(model => model.type === 'api').map(model => <ModelRow key={model.id} model={model} onEdit={() => openEdit(model)} onToggle={() => toggleModelEnabled(model.id)} onDelete={() => { if (window.confirm(`Delete “${model.name}” from your configured models? This removes its saved settings and API key from this browser.`)) deleteModel(model.id); }} onTest={() => testConnection(model)} state={connectionStates[model.id] || 'idle'} message={connectionMessages[model.id]} formatCurrency={formatCurrency} t={t} />)}{models.every(model => model.type !== 'api') && <div className="empty-state">{t('models.noneConfigured')}</div>}</div></div>}
 
       <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('models.templates')}</div><div className="panel-subtitle">{t('models.templatesNote')}</div></div></div><div className="panel-body template-grid">{MODEL_TEMPLATES.map(template => <article className="template-card" key={template.id}><div><strong>{template.name}</strong><span>{template.provider}</span><p>{template.description}</p></div><button className="button" onClick={() => openForm(template)}>{t('models.configure')}</button></article>)}</div></div>
 
@@ -157,7 +186,7 @@ export const ModelsView: React.FC = () => {
 
       <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('models.providers')}</div><div className="panel-subtitle">{t('models.providersNote')}</div></div></div><div className="panel-body provider-grid">{PROVIDERS.map(([label, url]) => <a className="provider-card" key={label} href={url} target="_blank" rel="noreferrer"><div><strong>{label}</strong><span>{t('models.officialKey')}</span></div><ExternalLink size={14} className="muted" /></a>)}</div></div>
 
-        {showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4"><form className="panel w-full max-w-2xl max-h-[90vh] overflow-auto" onSubmit={submit}><div className="panel-header"><div><div className="panel-title">{editingModel ? `Edit model · ${editingModel.name}` : selectedTemplate ? `${t('models.formTitle')} · ${selectedTemplate.name}` : t('models.formTitle')}</div><div className="panel-subtitle">{t('models.formNote')}</div></div><button type="button" className="button" onClick={() => { clearForm(); setShowForm(false); }}>{t('models.close')}</button></div><div className="panel-body grid-2"><div className="field col-span-2"><label>Connection type</label><div className="segmented"><button type="button" className={connectionMode === 'local' ? 'active' : ''} onClick={() => { setConnectionMode('local'); setApiKey(''); if (!endpoint.trim() || endpoint.includes('api.openai.com')) setEndpoint('http://localhost:11434/api/chat'); if (!provider.trim() || provider === 'OpenAI') setProvider('Ollama'); }}>Local</button><button type="button" className={connectionMode === 'api' ? 'active' : ''} onClick={() => { setConnectionMode('api'); if (endpoint.includes('localhost:11434')) setEndpoint(''); }}>Using API</button></div></div><div className="field"><label>{t('models.modelName')}</label><input className="input" required value={name} onChange={event => setName(event.target.value)} placeholder="ChatGPT · GPT-5" /></div><div className="field"><label>{t('models.modelId')}</label><input className="input" required value={modelId} onChange={event => setModelId(event.target.value)} placeholder="gpt-5" /></div><div className="field"><label>{t('models.provider')}</label><input className="input" value={provider} onChange={event => setProvider(event.target.value)} placeholder="OpenAI" /></div><div className="field"><label>{t('models.apiKey')}</label>{connectionMode === 'api' ? <input className="input" type="password" required value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder="Google API key or provider key" /> : <div className="input flex items-center muted">No API key needed for local models</div>}</div><div className="field col-span-2"><label>{t('models.endpoint')}</label><input className="input" required value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="https://api.openai.com/v1/chat/completions" /></div><div className="field"><label>{t('models.contextTokens')}</label><input className="input" type="number" value={context} onChange={event => setContext(event.target.value)} /></div><div className="col-span-2 flex justify-end gap-2"><button type="button" className="button" onClick={() => { clearForm(); setShowForm(false); }}>{t('models.cancel')}</button><button className="button primary" type="submit"><Plus size={15} /> {t('models.saveModel')}</button></div></div></form></div>}
+        {showForm && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4"><form className="panel w-full max-w-2xl max-h-[90vh] overflow-auto" onSubmit={submit}><div className="panel-header"><div><div className="panel-title">{editingModel ? `Edit model · ${editingModel.name}` : selectedTemplate ? `${t('models.formTitle')} · ${selectedTemplate.name}` : t('models.formTitle')}</div><div className="panel-subtitle">{t('models.formNote')}</div></div><button type="button" className="button" onClick={() => { clearForm(); setShowForm(false); }}>{t('models.close')}</button></div><div className="panel-body grid-2"><div className="field col-span-2 connection-mode-field"><label>Connection type</label><div className="segmented"><button type="button" className={connectionMode === 'local' ? 'active' : ''} onClick={() => { setConnectionMode('local'); if (!endpoint.trim() || endpoint.includes('api.openai.com')) setEndpoint('http://localhost:11434/api/chat'); if (!provider.trim() || provider === 'OpenAI') setProvider('Ollama'); }}>Local</button><button type="button" className={connectionMode === 'api' ? 'active' : ''} onClick={() => { setConnectionMode('api'); if (endpoint.includes('localhost:11434')) setEndpoint(''); }}>Using API</button></div></div><div className="field"><label>{t('models.modelName')}</label><input className="input" required value={name} onChange={event => setName(event.target.value)} placeholder="ChatGPT · GPT-5" /></div><div className="field"><label>{t('models.modelId')}</label><input className="input" required value={modelId} onChange={event => setModelId(event.target.value)} placeholder="gpt-5" /></div><div className="field"><label>{t('models.provider')}</label><input className="input" value={provider} onChange={event => setProvider(event.target.value)} placeholder="OpenAI" /></div><div className="field"><label>{t('models.apiKey')}</label>{connectionMode === 'api' ? <><div className="flex gap-2"><input className="input min-w-0 flex-1" type="password" required value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder="Google API key or provider key" /><button type="button" className="button shrink-0" onClick={findModels} disabled={!apiKey.trim() || discoveringModels}><Search size={14} /> {discoveringModels ? 'Finding…' : 'Find models'}</button></div>{discoveryMessage && <span className="muted text-xs" role="status">{discoveryMessage}</span>}</> : <div className="input flex items-center muted">No API key needed for local models</div>}</div><div className="field col-span-2"><label htmlFor="discovered-model">Models returned by provider</label><select id="discovered-model" className="select" value={availableModels.some(item => item.id === modelId) ? modelId : ''} onChange={event => { const found = availableModels.find(item => item.id === event.target.value); if (found) { setModelId(found.id); setName(found.name); } }} disabled={connectionMode !== 'api' || availableModels.length === 0}><option value="">Choose a model after finding available models</option>{availableModels.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div><div className="field col-span-2"><label>{t('models.endpoint')}</label><input className="input" required value={endpoint} onChange={event => setEndpoint(event.target.value)} placeholder="https://api.openai.com/v1/chat/completions" /></div><div className="field"><label>{t('models.contextTokens')}</label><input className="input" type="number" min="1" step="1" value={context} onChange={event => setContext(event.target.value)} /></div><div className="col-span-2 flex justify-end gap-2"><button type="button" className="button" onClick={() => { clearForm(); setShowForm(false); }}>{t('models.cancel')}</button><button className="button primary" type="submit"><Plus size={15} /> {t('models.saveModel')}</button></div></div></form></div>}
     </div>
   );
 };

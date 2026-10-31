@@ -1,28 +1,12 @@
-<div align="center">
-
 # ZOT
 
 ### Zero-Shot Prompt Routing System
 
-Route each prompt to the model that best matches its intent, complexity, context needs, latency, and cost.
+Route prompts across local and hosted language models with visible task classification, configurable providers, request telemetry, and cost estimates.
 
-<p>
-  <a href="https://github.com/nameisvignesh/Zot">Repository</a> ·
-  <a href="https://github.com/nameisvignesh/Zot/issues">Issues</a> ·
-  <a href="https://github.com/nameisvignesh/Zot/pulls">Pull requests</a>
-</p>
+**React 19** · **TypeScript 5.8** · **Vite 6** · **Tailwind CSS 4** · **MIT License**
 
-<p>
-  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=111" alt="React 19" />
-  <img src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=fff" alt="Vite 6" />
-  <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=fff" alt="TypeScript 5.8" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=fff" alt="Tailwind CSS 4" />
-  <img src="https://img.shields.io/badge/License-MIT-f5f5f5?labelColor=111" alt="MIT License" />
-</p>
-
-![ZOT dashboard](public/readme-dashboard.png)
-
-</div>
+[Repository](https://github.com/nameisvignesh/Zot) · [Issues](https://github.com/nameisvignesh/Zot/issues) · [Pull requests](https://github.com/nameisvignesh/Zot/pulls)
 
 ## Contents
 
@@ -124,7 +108,7 @@ The Playground is the normal chat surface. It routes the outgoing prompt, sends 
 
 ### Prompt Refinement
 
-Prompt Refinement can be unlocked with a Hugging Face token. It also provides a common provider-token section for refinement workflows and reports approximate token savings, reduction percentage, and semantic similarity.
+Prompt Refinement works immediately with ZOT's local constraint-aware rules; no account, token, or model is required, and the prompt stays in the browser. Optionally select an enabled configured model for model-assisted rewriting. ZOT checks the candidate for token reduction, preserved detected constraints, and approximate semantic similarity. If the model output fails these checks or the provider request fails, a valid local refinement is shown when available. Hugging Face setup is optional and lets you add a model from its Inference Providers catalog.
 
 ### Analytics
 
@@ -246,9 +230,9 @@ After opening ZOT:
 
 1. Open **Settings** and choose the language, currency, default model, timeout, and routing behavior.
 2. Press **Save preferences**.
-3. Open **Models** and configure at least one API model if you want generated chat responses.
-4. Press **Test connection** for the configured model.
-5. Use **Prompt Router** to inspect a route or **Playground** to generate a response.
+3. Use **Prompt Router** to inspect a route or **Refinement** to shorten a prompt locally.
+4. To generate chat responses or use model-assisted refinement, open **Models**, configure an API model or local endpoint, and press **Test connection**.
+5. Use **Playground** to generate a response. Hugging Face authentication is only needed to add an HF Inference Providers model from the Refinement page.
 
 ### Provider setup workflow
 
@@ -298,11 +282,10 @@ Provider behavior can change independently of ZOT. Always confirm the current en
 
 ### Refine a prompt
 
-1. Open **Refinement**.
-2. Enter a Hugging Face token and select **Enter with token** when the gate is shown.
-3. Optionally save a common provider token and endpoint.
-4. Enter the original prompt.
-5. Select **Refine** and compare the output and token metrics.
+1. Open **Refinement** and enter the original prompt.
+2. Leave the model selector on **ZOT local rules** to refine without sending the prompt to a provider, or select an enabled configured model for model-assisted refinement.
+3. Select **Refine** and compare the output and approximate token savings.
+4. To use a Hugging Face hosted model, connect an HF token with Inference Providers access, add its model ID, and select it. The token is stored in this browser and sent to Hugging Face when that model is used.
 
 ### Review usage and cost
 
@@ -352,42 +335,57 @@ ZOT calculates prompt-specific token counts and estimated output tokens locally.
 
 If the catalog cannot be loaded, check the browser network connection, content-blocking extensions, and the provider's availability, then use **Refresh catalog**.
 
-## Run LFM2.5-2.6B locally with Ollama
+## Optional: use LFM2.5-2.6B locally with Ollama
 
-ZOT connects to Ollama running on the same computer. Ollama downloads and runs the model; ZOT sends prompts to Ollama's local chat API.
+LFM2.5-2.6B is an optional local model. ZOT does not download it automatically, so you choose whether its roughly 1.7 GB default Ollama package fits your storage and connection. It is separate from ZOT's default model list. Ollama currently provides a 128K context model; its `q4_k_m` tag is the default `latest` quantization.
 
-1. **Install Ollama** from [ollama.com/download](https://ollama.com/download) and open it so its local service is running.
-2. **Set up and download the model** from a terminal:
+### 1. Install Ollama
 
-   ```bash
-   ollama run LiquidAI/lfm2.5-2.6b
-   ```
+Download and install Ollama from [ollama.com/download](https://ollama.com/download). On Windows, open Ollama after installation and leave it running. Ollama exposes its local API at `http://localhost:11434` by default. On macOS or Linux, use the official installer linked from the same page.
 
-   Ollama downloads the model the first time and opens a terminal chat. You can use the model there. Exit the chat when you want to use ZOT; Ollama's service should remain running.
+### 2. Download and try the model
 
-3. **Use Ollama's local endpoint** in ZOT. The chat endpoint is:
+Open PowerShell, Terminal, or a command prompt and run:
 
-   ```text
-   http://localhost:11434/api/chat
-   ```
+```bash
+ollama run LiquidAI/lfm2.5-2.6b
+```
 
-   This is Ollama's local API endpoint; it does not require a hosted API key. Keep ZOT and Ollama on the same computer when using `localhost`.
+The first run downloads the model and starts a chat. When finished, exit the Ollama chat; keep the Ollama application/service running for ZOT. To check that it is installed:
 
-4. **Configure the model in ZOT.** Open **Models → Add custom model**, choose **Local**, and enter:
+```bash
+ollama list
+```
+
+The model page lists optional quantizations such as `q4_0`, `q4_k_m`, `q5_k_m`, `q6_k`, `q8_0`, `f16`, and `bf16`. For example, run a specific variant with `ollama run LiquidAI/lfm2.5-2.6b:q4_0`. Larger precision variants use more disk space and memory.
+
+### 3. Add it to ZOT
+
+1. Open **Models** and select **Add custom model**.
+2. Choose **Local**. No API key is needed.
+3. Enter these values:
 
    | Field | Value |
    | --- | --- |
-   | Model name | `LFM2.5 2.6B` |
-   | Model ID | `LiquidAI/lfm2.5-2.6b:latest` |
+   | Model name | `LFM2.5-2.6B (Ollama)` |
+   | Model ID | `LiquidAI/lfm2.5-2.6b` |
    | Provider | `Ollama` |
    | URL endpoint | `http://localhost:11434/api/chat` |
    | Context tokens | `131072` |
 
-   If your Ollama installation lists a different tag, use the exact name shown by `ollama list` for **Model ID**. Leave the API key empty.
+   If you downloaded a tagged variant, use its full tag as the **Model ID**, such as `LiquidAI/lfm2.5-2.6b:q4_0`.
 
-5. **Save and test the connection**, then select the model in Prompt Router or Playground to use it locally.
+4. Save the model, make sure its enabled switch is on, then select **Test connection**.
+5. Choose the model in **Prompt Router** or **Playground**. Requests go to the Ollama server on this computer and do not require a hosted provider key.
 
-If the connection test fails, check that Ollama is open, run `ollama list` to confirm the model is installed, and verify the endpoint is exactly `http://localhost:11434/api/chat`.
+### Troubleshooting Ollama
+
+- **Connection refused or timeout:** Open Ollama and verify it is running at `http://localhost:11434`.
+- **Model not found:** Run `ollama list` and copy the exact installed model name into ZOT's **Model ID** field.
+- **Not enough disk space or memory:** Remove a model you no longer need with `ollama rm MODEL_NAME`, or use a smaller quantization tag. The `q4_k_m` default is about 1.7 GB according to Ollama's model listing.
+- **Using a different computer:** `localhost` points to the computer running the browser. Configure the reachable Ollama address only if your network is set up to expose it safely.
+
+See the official [LFM2.5-2.6B Ollama model page](https://ollama.com/LiquidAI/lfm2.5-2.6b) and [Ollama download page](https://ollama.com/download) for current downloads and model variants.
 
 ## Environment variables
 
@@ -454,7 +452,7 @@ Do not put provider API keys in Vite environment variables for a public build. V
 | --- | --- |
 | `src/context/ZotContext.tsx` | Shared application state, model persistence, settings, request history, and navigation |
 | `src/lib/routingEngine.ts` | Prompt classification, complexity scoring, model selection, and cost estimation |
-| `src/lib/tokenizer.ts` | Lightweight token estimation and constraint extraction |
+| `src/lib/tokenizer.ts` | Lightweight token estimation, local refinement, and constraint extraction |
 | `src/lib/modelClient.ts` | Provider request normalization, chat calls, timeout handling, and connection tests |
 | `src/lib/publicModelCatalog.ts` | Runtime loading and normalization of public model metadata |
 | `src/lib/i18n.ts` | UI translation dictionaries and interpolation |

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, Grid2X2, List, Pencil, Route, Send } from 'lucide-react';
+import { Check, Copy, ExternalLink, Grid2X2, List, Pencil, Route, Send, Trash2 } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { countTokens } from '../../lib/tokenizer';
 import { classifyPrompt, routePrompt } from '../../lib/routingEngine';
@@ -8,7 +8,7 @@ import { Model } from '../../types';
 const formatContext = (value: number) => value >= 1024 ? `${Math.round(value / 1024)}K` : `${value}`;
 
 export const RoutingView: React.FC = () => {
-  const { models, publicModels, runInference, isExecuting, lastExecutionMetrics, requestModelEdit, formatCurrency, t } = useZot();
+  const { models, publicModels, runInference, isExecuting, lastExecutionMetrics, requestModelEdit, deleteModel, formatCurrency, t } = useZot();
   const [prompt, setPrompt] = useState('How do I make a paper rocket?');
   const [view, setView] = useState<'grid' | 'table'>('grid');
   const [preferredModel, setPreferredModel] = useState('');
@@ -111,7 +111,7 @@ export const RoutingView: React.FC = () => {
         <div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Route size={15} className="accent" /> {t('routing.targets')}</div><div className="panel-subtitle">{t('routing.localReady')}{publicSuggestion ? ` · ${t('routing.publicSuggestion', { value: publicSuggestion.name })}` : ''}</div></div><span className="badge">{t('routing.enabled', { value: enabledModels.length })}</span></div>
         {view === 'grid' ? (
           <div className="panel-body grid-3">
-            {enabledModels.map(model => <ModelCard key={model.id} model={model} onSelect={() => setPreferredModel(model.id)} onEdit={() => requestModelEdit(model.id)} selected={selectedModel?.id === model.id} />)}
+            {enabledModels.map(model => <ModelCard key={model.id} model={model} onSelect={() => setPreferredModel(model.id)} onEdit={() => requestModelEdit(model.id)} onDelete={() => { if (!model.is_builtin && window.confirm(`Delete “${model.name}” from your configured models?`)) { deleteModel(model.id); if (preferredModel === model.id) setPreferredModel(''); } }} selected={selectedModel?.id === model.id} />)}
           </div>
         ) : (
           <div className="table-wrap"><table className="data-table"><thead><tr><th>{t('routing.selectedModel')}</th><th>{t('routing.context')}</th><th>{t('routing.latency')}</th><th>{t('routing.cost')} / 1K</th><th>{t('routing.getApiKey')}</th></tr></thead><tbody>{enabledModels.map(model => <tr key={model.id}><td><strong>{model.name}</strong><div className="muted">{model.provider}</div></td><td>{formatContext(model.context_length)}</td><td>{model.latency_ms_avg}ms</td><td>{model.is_free ? t('routing.free') : formatCurrency(model.input_cost_per_1k + model.output_cost_per_1k)}</td><td><div className="flex gap-2"><ModelLink model={model} /><button className="button" title="Edit model configuration" aria-label={`Edit ${model.name}`} onClick={() => requestModelEdit(model.id)}><Pencil size={14} /></button></div></td></tr>)}</tbody></table></div>
@@ -123,13 +123,13 @@ export const RoutingView: React.FC = () => {
   );
 };
 
-const ModelCard: React.FC<{ model: Model; selected: boolean; onSelect: () => void; onEdit: () => void }> = ({ model, selected, onSelect, onEdit }) => {
+const ModelCard: React.FC<{ model: Model; selected: boolean; onSelect: () => void; onEdit: () => void; onDelete: () => void }> = ({ model, selected, onSelect, onEdit, onDelete }) => {
   const { t, formatCurrency } = useZot();
   return <div className={`panel p-4 ${selected ? 'ring-1 ring-white' : ''}`}>
     <div className="flex items-start justify-between gap-3"><div><strong className="text-sm">{model.name}</strong><div className="muted text-xs mt-1">{model.provider}</div></div><span className={model.is_free ? 'badge success' : 'badge'}>{model.is_free ? t('routing.free') : t('routing.api')}</span></div>
     <p className="muted text-xs mt-4 min-h-[34px]">{model.description}</p>
     <div className="grid grid-cols-3 gap-2 mt-4 text-xs"><div><div className="metric-label">{t('routing.context')}</div><strong>{formatContext(model.context_length)}</strong></div><div><div className="metric-label">{t('routing.latency')}</div><strong>{model.latency_ms_avg}ms</strong></div><div><div className="metric-label">{t('routing.cost')}</div><strong>{model.is_free ? t('routing.free') : formatCurrency(model.input_cost_per_1k)}</strong></div></div>
-    <div className="flex gap-2 mt-4"><button className={selected ? 'button primary flex-1' : 'button flex-1'} onClick={onSelect}>{selected ? t('routing.selected') : t('routing.useRoute')}</button><ModelLink model={model} /><button className="button" onClick={onEdit} title="Edit model configuration" aria-label={`Edit ${model.name}`}><Pencil size={14} /></button></div>
+    <div className="flex gap-2 mt-4"><button className={selected ? 'button primary flex-1' : 'button flex-1'} onClick={onSelect}>{selected ? t('routing.selected') : t('routing.useRoute')}</button><ModelLink model={model} /><button className="button" onClick={onEdit} title="Edit model configuration" aria-label={`Edit ${model.name}`}><Pencil size={14} /></button><button className="button" onClick={onDelete} disabled={model.is_builtin} title="Delete model" aria-label={`Delete ${model.name}`}><Trash2 size={14} /></button></div>
   </div>;
 };
 

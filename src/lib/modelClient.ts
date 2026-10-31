@@ -10,6 +10,54 @@ export interface ModelRequestResult {
   latencyMs: number;
 }
 
+export interface DiscoveredModel {
+  id: string;
+  name: string;
+}
+
+export const discoverProviderModels = async (provider: string, endpoint: string, apiKey: string, timeoutMs = 15000): Promise<DiscoveredModel[]> => {
+  const cleanProvider = provider.toLowerCase();
+  let url: string;
+  let headers: Record<string, string> = { Accept: 'application/json' };
+  if (cleanProvider.includes('google') || cleanProvider.includes('gemini')) {
+    url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+  } else if (cleanProvider.includes('anthropic') || cleanProvider.includes('claude')) {
+    url = 'https://api.anthropic.com/v1/models';
+    headers = { ...headers, 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
+  } else {
+    const base = endpoint.trim().replace(/\/+$/, '')
+      .replace(/\/(?:chat\/completions|responses|messages)$/, '')
+      .replace(/\/v1beta\/openai$/, '/v1beta/openai')
+      .replace(/\/v1$/, '');
+    url = `${base}/v1/models`;
+    headers = { ...headers, Authorization: `Bearer ${apiKey}` };
+  }
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+    if (!response.ok) throw new Error(await errorMessage(response));
+    const payload = await response.json();
+    const entries = Array.isArray(payload?.models) ? payload.models : Array.isArray(payload?.data) ? payload.data : [];
+    const models = entries
+      .filter((item: any) => !item.supportedGenerationMethods || item.supportedGenerationMethods.includes('generateContent'))
+      .map((item: any) => {
+        const id = String(item.id || item.name || '').replace(/^models\//, '');
+        return id ? { id, name: String(item.displayName || item.name || id).replace(/^models\//, '') } : null;
+      })
+      .filter((item: DiscoveredModel | null): item is DiscoveredModel => Boolean(item));
+    if (models.length === 0) throw new Error('The provider accepted the key but returned no models for this endpoint. Confirm the provider endpoint and model access.');
+    return models;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Model discovery timed out.');
+    if (error instanceof TypeError) throw new Error('Could not reach the provider model list. Check the endpoint and browser CORS access.');
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+};
+
 const extractText = (payload: any): string => {
   const choice = payload?.choices?.[0];
   const parts = payload?.candidates?.[0]?.content?.parts;
@@ -29,8 +77,10 @@ const extractText = (payload: any): string => {
 
 const errorMessage = async (response: Response) => {
   try {
-    const body = await response.json();
-    const detail = body?.error?.message || body?.error?.details?.[0]?.message || body?.message || body?.detail || body?.error;
+    const raw = await response.text();
+    let body: any;
+    try { body = JSON.parse(raw); } catch { body = undefined; }
+    const detail = body?.error?.message || body?.error?.details?.[0]?.message || body?.message || body?.detail || (typeof body?.error === 'string' ? body.error : '') || raw;
     if (typeof detail === 'string' && detail.trim()) return `${response.status}: ${detail}`;
     return `${response.status}: ${response.statusText || 'The provider rejected the request. Check the model ID and endpoint.'}`;
   } catch {
@@ -61,7 +111,8 @@ export const normalizeModelEndpoint = (endpoint: string, provider = '') => {
 const normalizeModelId = (model: Model) => {
   const provider = model.provider.toLowerCase();
   if (provider.includes('google') || provider.includes('gemini')) {
-    return model.id.replace(/^(gemini)-(\d+)-(\d+)(-.+)?$/, '$1-$2.$3$4');
+    const aliases: Record<string, string> = { 'gemini-flash': 'gemini-2.5-flash', 'gemini-pro': 'gemini-2.5-pro' };
+    return aliases[model.id.toLowerCase()] || model.id.replace(/^(gemini)-(\d+)-(\d+)(-.+)?$/, '$1-$2.$3$4');
   }
   if (provider.includes('openai') || provider.includes('chatgpt')) {
     return model.id.replace(/^(gpt)-(\d+)-(\d+)(-.+)?$/, '$1-$2.$3$4');
@@ -114,7 +165,7 @@ export const requestModelChat = async (
   const requestEndpoint = useGoogleNativeApi
     ? `${googleBase}/models/${googleModelId}:generateContent?key=${encodeURIComponent(model.api_key)}`
     : isGoogleOpenAiCompat
-      ? `${endpoint}?key=${encodeURIComponent(model.api_key)}`
+      ? endpoint
       : endpoint;
 
   try {
@@ -122,7 +173,9 @@ export const requestModelChat = async (
       'Content-Type': 'application/json',
       ...(!useGoogleNativeApi && isAnthropic
         ? { 'x-api-key': model.api_key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }
-        : !useGoogleNativeApi && !isGoogleOpenAiCompat && model.api_key ? { Authorization: `Bearer ${model.api_key}` } : {}),
+        : isGoogleOpenAiCompat && model.api_key
+          ? { Authorization: `Bearer ${model.api_key}` }
+          : !useGoogleNativeApi && !isGoogleOpenAiCompat && model.api_key ? { Authorization: `Bearer ${model.api_key}` } : {}),
     };
     const body = useGoogleNativeApi
       ? {
@@ -201,9 +254,9 @@ export const testModelConnection = async (model: Model, timeoutMs = 10000) => {
       const payload = await response.json();
       const configuredModel = normalizeModelId(model).replace(/-latest$/, '');
       const supported = (payload.models || []).some((item: any) => String(item.name || '').replace(/^models\//, '') === configuredModel && (item.supportedGenerationMethods || []).includes('generateContent'));
-      return supported
-        ? { ok: true, message: 'Google API key and model access verified.' }
-        : { ok: false, message: `Key is valid, but the configured model (${model.id}) was not listed with generateContent access.` };
+      if (!supported) return { ok: false, message: `Key is valid, but model “${model.id}” was not listed with generateContent access. Use Find models to select an available model.` };
+      const result = await requestModelChat(model, [{ role: 'user', content: 'Reply with OK.' }], timeoutMs);
+      return { ok: true, message: `Google model access verified with a live response in ${result.latencyMs}ms.` };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : 'Google API validation failed.' };
     } finally {

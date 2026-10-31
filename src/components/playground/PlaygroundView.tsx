@@ -29,7 +29,7 @@ export const PlaygroundView: React.FC = () => {
     try {
       const result = await runInference({ prompt: outgoing, refine: false, preferredModelId: modelId === 'auto' ? undefined : modelId });
       const target = models.find(model => model.id === result.model_id);
-      setMessages(current => [...current, { role: 'system', text: t('playground.routed', { model: result.model_name, task: result.task_type, confidence: Math.round(result.routing_decision.task_confidence * 100) }) }]);
+      setMessages(current => [...current, { role: 'system', text: t('playground.routed', { model: result.model_name, task: result.task_type }) }]);
       if (!target) throw new Error('No model was selected.');
       if (result.status === 'error') throw new Error(result.error_message || 'The selected model could not answer this message.');
       reportConnectionStatus('ready');
