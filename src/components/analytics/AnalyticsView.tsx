@@ -135,7 +135,7 @@ const ModelConnectionMap: React.FC<{ models: Model[]; requests: RequestRecord[] 
               <circle cx={x} cy={y} r="11" fill={color} stroke="#0b0b0b" strokeWidth="4" />
             </g>;
           })}
-          <g className="model-map-center" tabIndex={0} aria-label="ZOT router"><title>ZOT</title><circle cx={center.x} cy={center.y} r="25" fill="#fff" /></g>
+          <g className="model-map-center" tabIndex={0} aria-label="ZOT Hub"><title>ZOT Hub</title><circle cx={center.x} cy={center.y} r="25" fill="#fff" /></g>
         </svg>
       </div>
       {enabledModels.length > 0 && <div className="model-map-legend"><span><i className="healthy" />Healthy request</span><span><i className="failed" />Latest request failed</span></div>}

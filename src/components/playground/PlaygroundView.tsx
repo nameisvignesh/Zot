@@ -111,6 +111,7 @@ export const PlaygroundView: React.FC = () => {
 
   const clearChat = () => {
     if (!hasConversation || isSending || isExecuting) return;
+    if (!window.confirm('Do you want to clear this chat?')) return;
     setMessage('');
     setMessages([]);
   };
