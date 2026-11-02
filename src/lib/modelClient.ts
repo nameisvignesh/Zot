@@ -206,9 +206,9 @@ export const requestModelChat = async (
       : isHuggingFaceInference
       ? { inputs: messages.map(message => `${message.role}: ${message.content}`).join('\n'), parameters: { max_new_tokens: 512, temperature: 0.2 }, options: { wait_for_model: true } }
       : isOllamaChat
-      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, think: isRefinement, keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
+      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, ...(isRefinement ? { think: false } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOllamaGenerate
-      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, think: isRefinement, keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
+      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, ...(isRefinement ? { think: false } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOpenAIResponses
       ? { model: requestModelId, input: messages.map(message => ({ role: message.role, content: [{ type: 'input_text', text: message.content }] })), max_output_tokens: 512, temperature: 0.2 }
       : { model: requestModelId, messages, max_tokens: 512, temperature: 0.2, stream: false };

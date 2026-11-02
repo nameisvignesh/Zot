@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { BarChart3, Download, FileText, Network, Table2, TrendingUp } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { CartesianGrid, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { Model, RequestRecord } from '../../types';
 
 type AnalyticsMode = 'charts' | 'table' | 'nodes';
 type ChartMetric = 'tokens' | 'latency' | 'cost';
@@ -96,9 +97,48 @@ export const AnalyticsView: React.FC = () => {
           </div>
         </div>
         <div className="panel"><div className="panel-header"><div className="panel-title">{t('analytics.modelPerformance')}</div></div><div className="table-wrap"><PerformanceTable rows={modelPerformance} formatCurrency={formatCurrency} t={t} /></div></div>
-      </> : mode === 'nodes' ? <div className="panel"><div className="panel-header"><div><div className="panel-title">Model connection map</div><div className="panel-subtitle">A model turns green after a recorded successful request and red after its latest request fails. Hover a node for details.</div></div></div><div className="panel-body"><div className="chart-line" style={{ height: 360 }}><svg viewBox="0 0 760 320" role="img" aria-label="ZOT model connection map" className="w-full h-full"><circle cx="380" cy="160" r="58" fill="#15171a" stroke="#e2a640" strokeWidth="2"/><text x="380" y="165" textAnchor="middle" fill="#fff" fontSize="18" fontWeight="700">ZOT</text>{models.filter(model => model.enabled).map((model, index, visible) => { const angle = (Math.PI * 2 * index / Math.max(visible.length, 1)) - Math.PI / 2; const x = 380 + Math.cos(angle) * 250; const y = 160 + Math.sin(angle) * 112; const latest = requests.find(request => request.model_id === model.id); const color = latest ? (latest.status === 'success' ? '#21c37a' : '#ef5b5b') : model.status === 'offline' ? '#ef5b5b' : '#e2a640'; return <g key={model.id}><title>{model.name} · {latest ? `latest request ${latest.status}` : 'no request recorded'}</title><line x1="380" y1="160" x2={x} y2={y} stroke={color} strokeOpacity=".72" strokeWidth="2"/><circle cx={x} cy={y} r="17" fill={color} stroke="#0b0b0b" strokeWidth="4"/><text x={x} y={y + 34} textAnchor="middle" fill="#d1d5db" fontSize="11">{model.name.length > 24 ? `${model.name.slice(0, 22)}…` : model.name}</text></g>; })}</svg>{models.every(model => !model.enabled) && <div className="empty-state">No enabled models. Configure one in Models to add nodes.</div>}</div><div className="flex gap-4 text-xs muted mt-3"><span>● <span className="text-emerald-400">Healthy request</span></span><span>● <span className="text-red-400">Latest request failed</span></span><span>● <span className="text-amber-300">No request yet</span></span></div></div></div> : <div className="panel"><div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Table2 size={15} className="accent" /> {t('analytics.table')}</div><div className="panel-subtitle">{t('analytics.tableNote')}</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>{t('analytics.time')}</th><th>{t('analytics.task')}</th><th>{t('analytics.model')}</th><th>{t('analytics.tokens')}</th><th>{t('analytics.latency')}</th><th>{t('analytics.cost')}</th><th>{t('analytics.status')}</th></tr></thead><tbody>{requests.map(request => <tr key={request.id}><td>{new Date(request.timestamp).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{request.task_type}</td><td>{request.model_name}</td><td>{request.input_tokens} in / {request.output_tokens} out</td><td>{request.latency_ms}ms</td><td>{formatCurrency(request.actual_cost)}</td><td><span className={request.status === 'success' ? 'badge success' : 'badge danger'}>{request.status}</span></td></tr>)}</tbody></table>{requests.length === 0 && <div className="empty-state"><FileText size={18} /> {t('analytics.noRecords')}</div>}</div></div>}
+      </> : mode === 'nodes' ? <ModelConnectionMap models={models} requests={requests} /> : <div className="panel"><div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Table2 size={15} className="accent" /> {t('analytics.table')}</div><div className="panel-subtitle">{t('analytics.tableNote')}</div></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>{t('analytics.time')}</th><th>{t('analytics.task')}</th><th>{t('analytics.model')}</th><th>{t('analytics.tokens')}</th><th>{t('analytics.latency')}</th><th>{t('analytics.cost')}</th><th>{t('analytics.status')}</th></tr></thead><tbody>{requests.map(request => <tr key={request.id}><td>{new Date(request.timestamp).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>{request.task_type}</td><td>{request.model_name}</td><td>{request.input_tokens} in / {request.output_tokens} out</td><td>{request.latency_ms}ms</td><td>{formatCurrency(request.actual_cost)}</td><td><span className={request.status === 'success' ? 'badge success' : 'badge danger'}>{request.status}</span></td></tr>)}</tbody></table>{requests.length === 0 && <div className="empty-state"><FileText size={18} /> {t('analytics.noRecords')}</div>}</div></div>}
     </div>
   );
 };
 
 const PerformanceTable: React.FC<{ rows: Array<{ model: any; requests: number; tokens: number; cost: number; latency: number }>; formatCurrency: (value: number) => string; t: (key: string, values?: Record<string, string | number>) => string }> = ({ rows, formatCurrency, t }) => <><table className="data-table"><thead><tr><th>{t('analytics.model')}</th><th>{t('analytics.contextWindow')}</th><th>{t('analytics.requests')}</th><th>{t('analytics.tokens')}</th><th>{t('analytics.latency')}</th><th>{t('analytics.cost')}</th></tr></thead><tbody>{rows.map(row => <tr key={row.model.id}><td><strong>{row.model.name}</strong><div className="muted">{row.model.provider}</div></td><td>{row.model.context_length.toLocaleString()}</td><td>{row.requests}</td><td>{row.tokens.toLocaleString()}</td><td>{row.latency}ms</td><td>{formatCurrency(row.cost)}</td></tr>)}</tbody></table>{rows.length === 0 && <div className="empty-state">No completed or failed model requests yet.</div>}</>;
+
+const ModelConnectionMap: React.FC<{ models: Model[]; requests: RequestRecord[] }> = ({ models, requests }) => {
+  const enabledModels = models.filter(model => model.enabled);
+  const center = { x: 450, y: 280 };
+  const getNodeColor = (model: Model) => {
+    const latest = requests.filter(request => request.model_id === model.id).sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))[0];
+    if (latest?.status === 'error' || model.status === 'offline') return '#ef5b5b';
+    if (latest?.status === 'success') return '#21c37a';
+    if (latest?.status === 'warning' || model.status === 'loading') return '#f5c451';
+    return '#737780';
+  };
+
+  return <div className="panel">
+    <div className="panel-header"><div><div className="panel-title">Model connection map</div><div className="panel-subtitle">Models orbit the ZOT router; distance reflects context size and each node’s position varies by model.</div></div></div>
+    <div className="panel-body">
+      <div className="chart-line model-map-wrap">
+        <svg viewBox="0 0 900 560" role="img" aria-label="ZOT model connection map" className="model-map">
+          {enabledModels.map((model, index) => {
+            let hash = 0;
+            for (const character of model.id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+            const angle = (Math.PI * 2 * index / Math.max(enabledModels.length, 1)) - Math.PI / 2;
+            const contextScale = Math.max(0, Math.min(1, (Math.log10(Math.max(model.context_length, 1)) - 3) / 4));
+            const radius = 148 + contextScale * 58 + (hash % 25) - 12;
+            const x = center.x + Math.cos(angle) * radius;
+            const y = center.y + Math.sin(angle) * radius;
+            const color = getNodeColor(model);
+            return <g key={model.id} className="model-map-node" tabIndex={0} aria-label={model.name}>
+              <title>{model.name}</title>
+              <line x1={center.x} y1={center.y} x2={x} y2={y} stroke={color} strokeOpacity=".66" strokeWidth="1.5" />
+              <circle cx={x} cy={y} r="11" fill={color} stroke="#0b0b0b" strokeWidth="4" />
+            </g>;
+          })}
+          <g className="model-map-center" tabIndex={0} aria-label="ZOT router"><title>ZOT</title><circle cx={center.x} cy={center.y} r="25" fill="#fff" /></g>
+        </svg>
+      </div>
+      {enabledModels.length > 0 && <div className="model-map-legend"><span><i className="healthy" />Healthy request</span><span><i className="failed" />Latest request failed</span></div>}
+    </div>
+  </div>;
+};

@@ -7,7 +7,7 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({ className = '', size = 32 }) => (
   <img
-    src="/zot-logo.png"
+    src={`${import.meta.env.BASE_URL}zot-logo.png`}
     alt="ZOT"
     width={size}
     height={size}

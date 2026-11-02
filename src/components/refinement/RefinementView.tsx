@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ExternalLink, KeyRound, Plus, Sparkles } from 'lucide-react';
+import { ArrowRight, ExternalLink, KeyRound, Plus, Sparkles, X } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { calculateSemanticSimilarity, countTokens, extractConstraints, refinePrompt } from '../../lib/tokenizer';
 import { requestModelChat } from '../../lib/modelClient';
@@ -7,11 +7,13 @@ import { requestModelChat } from '../../lib/modelClient';
 const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
 
 export const RefinementView: React.FC = () => {
-  const { models, addModel, hfAuthState, connectHuggingFace, disconnectHuggingFace, activeRefinerVersion, settings, requestNavigation, t } = useZot();
+  const { models, addModel, hfAuthState, connectHuggingFace, disconnectHuggingFace, activeRefinerVersion, settings, requestNavigation, reportConnectionStatus, t } = useZot();
   const configuredModels = useMemo(() => models.filter(model => !model.is_builtin && model.enabled && model.status !== 'offline'), [models]);
   const [selectedModelId, setSelectedModelId] = useState('');
   const [hfToken, setHfToken] = useState('');
   const [hfModelId, setHfModelId] = useState('');
+  const [isHfDialogOpen, setIsHfDialogOpen] = useState(false);
+  const [hfError, setHfError] = useState('');
   const [prompt, setPrompt] = useState('');
   const [refined, setRefined] = useState('');
   const [error, setError] = useState('');
@@ -60,6 +62,7 @@ export const RefinementView: React.FC = () => {
       const withinReasonableLength = countTokens(candidate) <= Math.max(countTokens(prompt) + 8, Math.ceil(countTokens(prompt) * 1.2));
       const similarity = calculateSemanticSimilarity(prompt, candidate);
       if (!candidate || !constraintsPreserved || !withinReasonableLength || similarity < Math.min(settings.min_similarity_threshold, 0.42)) {
+        reportConnectionStatus('error');
         if (localResult.metrics.accepted && localResult.refinedText !== prompt.trim()) {
           setRefined(localResult.refinedText);
           setError('Model-assisted refinement was rejected by the safety checks. Showing the safe local refinement instead.');
@@ -69,8 +72,10 @@ export const RefinementView: React.FC = () => {
         }
       } else {
         setRefined(candidate);
+        reportConnectionStatus('ready');
       }
     } catch (failure) {
+      reportConnectionStatus('error');
       if (localResult.metrics.accepted && localResult.refinedText !== prompt.trim()) setRefined(localResult.refinedText);
       else setRefined('');
       setError(failure instanceof Error ? failure.message : 'The selected model could not refine this prompt.');
@@ -81,12 +86,16 @@ export const RefinementView: React.FC = () => {
 
   const connectHf = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError('');
+    setHfError('');
     try {
-      if (!await connectHuggingFace(hfToken)) setError('Hugging Face could not verify this token. Check its Inference Providers permission, token status, and browser network access.');
+      if (!await connectHuggingFace(hfToken)) {
+        setHfError('Hugging Face could not verify this token. Check its Inference Providers permission, token status, and browser network access.');
+        reportConnectionStatus('error');
+      }
       else setHfToken('');
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Could not connect to Hugging Face.');
+      setHfError(failure instanceof Error ? failure.message : 'Could not connect to Hugging Face.');
+      reportConnectionStatus('error');
     }
   };
 
@@ -104,15 +113,28 @@ export const RefinementView: React.FC = () => {
     });
     setSelectedModelId(repo);
     setHfModelId('');
+    setIsHfDialogOpen(false);
   };
 
   return <div className="space-y-6">
     <div className="page-heading"><div><div className="eyebrow">{t('refinement.eyebrow')}</div><h1>{t('refinement.title')}</h1><p>{t('refinement.connectedDescription')}</p></div></div>
 
-    <div className="panel"><div className="panel-header"><div><div className="panel-title">{t('refinement.modelTitle')}</div><div className="panel-subtitle">{t('refinement.modelNote')}</div></div><span className="badge">{t('models.configured', { value: configuredModels.length })}</span></div><div className="panel-body space-y-4"><div className="grid-2 items-end"><div className="field"><label htmlFor="refinement-model">{t('refinement.modelToUse')}</label><select id="refinement-model" className="select" value={selectedModelId} onChange={event => setSelectedModelId(event.target.value)}><option value="">No Model Selected</option>{configuredModels.map(model => <option key={model.id} value={model.id}>{model.name} · {model.type === 'local' ? 'Local' : model.provider}</option>)}</select></div><div className="flex items-center gap-2 muted text-sm">{selectedModel ? <><span className="badge">{selectedModel.type === 'local' ? 'Local' : 'API'}</span><span>{selectedModel.name}</span></> : <span>Runs locally in your browser; no prompt is sent to a provider.</span>}</div></div>{configuredModels.length === 0 && <div className="alert">{t('refinement.noModels')}<button className="button ml-2" onClick={() => requestNavigation('models')}>{t('refinement.openModels')} <ArrowRight size={14} /></button></div>}<div className="rounded-lg border border-[#2b2b2b] p-4 space-y-3"><div className="flex items-center justify-between gap-3"><div><strong className="text-sm">Hugging Face Inference API</strong><p className="muted text-xs mt-1">Connect a token and add a hosted model for refinement.</p></div><a className="button" href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Get token</a></div>{!hfAuthState.isConnected ? <form className="flex flex-wrap items-end gap-2" onSubmit={connectHf}><div className="field flex-1 min-w-[240px]"><label htmlFor="refine-hf-token">Hugging Face token</label><input id="refine-hf-token" className="input" type="password" value={hfToken} onChange={event => setHfToken(event.target.value)} placeholder="hf_… · Inference Providers permission" required /></div><button className="button primary" type="submit"><KeyRound size={14} /> Connect</button></form> : <><div className="flex flex-wrap items-center justify-between gap-2"><span className="badge success">Connected as {hfAuthState.username}</span><button className="button" onClick={disconnectHuggingFace}>Disconnect</button></div><form className="flex flex-wrap items-end gap-2" onSubmit={addHfModel}><div className="field flex-1 min-w-[240px]"><label htmlFor="hf-model-id">Hugging Face model ID</label><input id="hf-model-id" className="input" value={hfModelId} onChange={event => setHfModelId(event.target.value)} placeholder="owner/model-name" required /></div><button className="button primary" type="submit" disabled={!hfModelId.trim() || models.some(model => model.id === hfModelId.trim())}><Plus size={14} /> Add model</button></form><p className="muted text-xs">Your token stays in this browser. The selected model must be available to your account.</p></>}{error && <div className="alert">{error}</div>}</div></div></div>
+    <div className="panel">
+      <div className="panel-header"><div><div className="panel-title">{t('refinement.modelTitle')}</div><div className="panel-subtitle">{t('refinement.modelNote')}</div></div><span className="badge">{t('models.configured', { value: configuredModels.length })}</span></div>
+      <div className="panel-body space-y-4">
+        <div className="refinement-model-row">
+          <div className="field"><label htmlFor="refinement-model">{t('refinement.modelToUse')}</label><select id="refinement-model" className="select" value={selectedModelId} onChange={event => setSelectedModelId(event.target.value)}><option value="">No Model Selected</option>{configuredModels.map(model => <option key={model.id} value={model.id}>{model.name} · {model.type === 'local' ? 'Local' : model.provider}</option>)}</select></div>
+          <div className="refinement-model-meta">{selectedModel ? <><span className="badge">{selectedModel.type === 'local' ? 'Local' : 'API'}</span><span className="muted text-sm">{selectedModel.name}</span></> : <span className="muted text-sm">Runs locally in your browser; no prompt is sent to a provider.</span>}<button type="button" className="button refinement-hf-trigger" onClick={() => { setHfError(''); setIsHfDialogOpen(true); }} aria-label="Open Hugging Face refinement settings" title="Hugging Face refinement settings">👆 <span>Hugging Face</span></button></div>
+        </div>
+        {configuredModels.length === 0 && <div className="alert">{t('refinement.noModels')}<button className="button ml-2" onClick={() => requestNavigation('models')}>{t('refinement.openModels')} <ArrowRight size={14} /></button></div>}
+      </div>
+    </div>
 
-      <div className="grid-2"><div className="panel"><div className="panel-header"><div className="panel-title">{t('refinement.input')}</div><span className="badge">{originalTokens} tokens</span></div><div className="panel-body space-y-4"><textarea className="textarea" rows={9} value={prompt} onChange={event => { setPrompt(event.target.value); setRefined(''); setError(''); }} placeholder={t('refinement.promptPlaceholder')} /><div className="flex flex-wrap items-center justify-end gap-3"><button className="button primary" onClick={() => void run()} disabled={!prompt.trim() || isRefining}><Sparkles size={15} /> {isRefining ? t('refinement.refining') : t('refinement.refine')}</button></div></div></div>
+    <div className="grid-2">
+      <div className="panel"><div className="panel-header"><div className="panel-title">{t('refinement.input')}</div><span className="badge">{originalTokens} tokens</span></div><div className="panel-body space-y-4"><textarea className="textarea" rows={9} value={prompt} onChange={event => { setPrompt(event.target.value); setRefined(''); setError(''); }} placeholder={t('refinement.promptPlaceholder')} /><div className="flex flex-wrap items-center justify-end gap-3"><button className="button primary" onClick={() => void run()} disabled={!prompt.trim() || isRefining}><Sparkles size={15} /> {isRefining ? t('refinement.refining') : t('refinement.refine')}</button></div></div></div>
+      <div className="panel"><div className="panel-header"><div className="panel-title">{t('refinement.refined')}</div><span className={refined ? 'badge success' : 'badge'}>{refined ? t('refinement.ready') : t('refinement.waiting')}</span></div><div className="panel-body">{error && <div className="alert mb-4" role="alert">{error}</div>}<div className="min-h-[250px] rounded-lg border border-[#2b2b2b] bg-[#0d0d0d] p-4 text-sm leading-7 whitespace-pre-wrap">{refined || <span className="muted">{t('refinement.appears')}</span>}</div>{refined && <div className="grid grid-cols-3 gap-3 mt-4 text-xs"><div><div className="metric-label">{t('refinement.savedTokens')}</div><strong>{savedTokens}</strong></div><div><div className="metric-label">{t('refinement.reduction')}</div><strong>{reduction}%</strong></div><div><div className="metric-label">{t('refinement.protectedConstraints')}</div><strong>{localResult?.metrics.detected_constraints.length || 0}</strong></div></div>}</div></div>
+    </div>
 
-      <div className="panel"><div className="panel-header"><div className="panel-title">{t('refinement.refined')}</div><span className={refined ? 'badge success' : 'badge'}>{refined ? t('refinement.ready') : t('refinement.waiting')}</span></div><div className="panel-body"><div className="min-h-[250px] rounded-lg border border-[#2b2b2b] bg-[#0d0d0d] p-4 text-sm leading-7 whitespace-pre-wrap">{refined || <span className="muted">{t('refinement.appears')}</span>}</div>{refined && <div className="grid grid-cols-3 gap-3 mt-4 text-xs"><div><div className="metric-label">{t('refinement.savedTokens')}</div><strong>{savedTokens}</strong></div><div><div className="metric-label">{t('refinement.reduction')}</div><strong>{reduction}%</strong></div><div><div className="metric-label">{t('refinement.protectedConstraints')}</div><strong>{localResult?.metrics.detected_constraints.length || 0}</strong></div></div>}</div></div></div>
+    {isHfDialogOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setIsHfDialogOpen(false); }}><section className="panel w-full max-w-xl" role="dialog" aria-modal="true" aria-labelledby="refinement-hf-title"><div className="panel-header"><div><div id="refinement-hf-title" className="panel-title">Hugging Face Inference API</div><div className="panel-subtitle">Connect access and add a hosted model for refinement.</div></div><button type="button" className="button" onClick={() => setIsHfDialogOpen(false)} aria-label="Close Hugging Face settings"><X size={15} /> Close</button></div><div className="panel-body space-y-4"><div className="flex items-center justify-between gap-3"><p className="muted text-xs">Your token remains in this browser.</p><a className="button" href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer"><ExternalLink size={14} /> Get token</a></div>{!hfAuthState.isConnected ? <form className="flex flex-wrap items-end gap-2" onSubmit={connectHf}><div className="field flex-1 min-w-[240px]"><label htmlFor="refine-hf-token">Hugging Face token</label><input id="refine-hf-token" className="input" type="password" value={hfToken} onChange={event => setHfToken(event.target.value)} placeholder="hf_… · Inference Providers permission" required /></div><button className="button primary" type="submit"><KeyRound size={14} /> Connect</button></form> : <><div className="flex flex-wrap items-center justify-between gap-2"><span className="badge success">Connected as {hfAuthState.username}</span><button type="button" className="button" onClick={disconnectHuggingFace}>Disconnect</button></div><form className="flex flex-wrap items-end gap-2" onSubmit={addHfModel}><div className="field flex-1 min-w-[240px]"><label htmlFor="hf-model-id">Hugging Face model ID</label><input id="hf-model-id" className="input" value={hfModelId} onChange={event => setHfModelId(event.target.value)} placeholder="owner/model-name" required /></div><button className="button primary" type="submit" disabled={!hfModelId.trim() || models.some(model => model.id === hfModelId.trim())}><Plus size={14} /> Add model</button></form><p className="muted text-xs">The selected model must be available to your account.</p></>}{hfError && <div className="alert" role="alert">{hfError}</div>}</div></section></div>}
   </div>;
 };
