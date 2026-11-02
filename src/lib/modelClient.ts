@@ -83,7 +83,12 @@ const errorMessage = async (response: Response) => {
     let body: any;
     try { body = JSON.parse(raw); } catch { body = undefined; }
     const detail = body?.error?.message || body?.error?.details?.[0]?.message || body?.message || body?.detail || (typeof body?.error === 'string' ? body.error : '') || raw;
-    if (typeof detail === 'string' && detail.trim()) return `${response.status}: ${detail}`;
+    if (typeof detail === 'string' && detail.trim()) {
+      if (/(insufficient|exhausted|quota|billing|credit balance|payment required)/i.test(detail)) {
+        return `Provider quota or credits are unavailable (${response.status}). Check the API key's billing, credits, and usage limits. ${detail}`;
+      }
+      return `${response.status}: ${detail}`;
+    }
     return `${response.status}: ${response.statusText || 'The provider rejected the request. Check the model ID and endpoint.'}`;
   } catch {
     return `${response.status}: ${response.statusText || 'The provider rejected the request. Check the model ID and endpoint.'}`;
@@ -181,6 +186,7 @@ export const requestModelChat = async (
           ? { Authorization: `Bearer ${model.api_key}` }
           : !useGoogleNativeApi && !isGoogleOpenAiCompat && model.api_key ? { Authorization: `Bearer ${model.api_key}` } : {}),
     };
+    const ollamaRefinementTokens = Math.min(768, Math.max(512, Math.ceil(messages.reduce((total, message) => total + message.content.length, 0) / 4)));
     const body = useGoogleNativeApi
       ? {
           contents: messages.filter(message => message.role !== 'system').map(message => ({
@@ -200,33 +206,60 @@ export const requestModelChat = async (
       : isHuggingFaceInference
       ? { inputs: messages.map(message => `${message.role}: ${message.content}`).join('\n'), parameters: { max_new_tokens: 512, temperature: 0.2 }, options: { wait_for_model: true } }
       : isOllamaChat
-      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, think: false, keep_alive: '2m', options: { temperature: 0.2, num_predict: isRefinement ? 192 : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64 } }
+      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, think: isRefinement, keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOllamaGenerate
-      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, think: false, keep_alive: '2m', options: { temperature: 0.2, num_predict: isRefinement ? 192 : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64 } }
+      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, think: isRefinement, keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOpenAIResponses
       ? { model: requestModelId, input: messages.map(message => ({ role: message.role, content: [{ type: 'input_text', text: message.content }] })), max_output_tokens: 512, temperature: 0.2 }
       : { model: requestModelId, messages, max_tokens: 512, temperature: 0.2, stream: false };
 
-    const response = await fetch(requestEndpoint, {
+    const fetchWithBody = (requestBody: unknown) => fetch(requestEndpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(await errorMessage(response));
-    const payload = await response.json();
-    let text = isOllamaGenerate && typeof payload?.response === 'string' ? payload.response.trim() : extractText(payload);
-    if (isOllamaChat || isOllamaGenerate) {
-      const thinkEnd = text.lastIndexOf('</think>');
-      if (thinkEnd >= 0) text = text.slice(thinkEnd + '</think>'.length).trim();
-      else if (/<think>/i.test(text)) text = '';
-      text = text.replace(/^<think>[\s\S]*?<\/think>/i, '').trim();
+    let activeBody: Record<string, any> = body as Record<string, any>;
+    let response = await fetchWithBody(activeBody);
+    if (!response.ok) {
+      const detail = await errorMessage(response);
+      if ((isOllamaChat || isOllamaGenerate) && isRefinement && /\bthink(?:ing)?\b.*(?:unsupported|not supported|invalid|unknown)|(?:unsupported|not supported|invalid|unknown).*\bthink(?:ing)?\b/i.test(detail)) {
+        const compatibilityBody = { ...activeBody };
+        delete compatibilityBody.think;
+        activeBody = compatibilityBody;
+        response = await fetchWithBody(compatibilityBody);
+        if (!response.ok) throw new Error(await errorMessage(response));
+      } else {
+        throw new Error(detail);
+      }
+    }
+    let payload = await response.json();
+    const getResponseText = (value: any) => {
+      let result = isOllamaGenerate && typeof value?.response === 'string' ? value.response.trim() : extractText(value);
+      if (isOllamaChat || isOllamaGenerate) {
+        const thinkEnd = result.lastIndexOf('</think>');
+        if (thinkEnd >= 0) result = result.slice(thinkEnd + '</think>'.length).trim();
+        else if (/<think>/i.test(result)) result = '';
+        result = result.replace(/^<think>[\s\S]*?<\/think>/i, '').trim();
+      }
+      return result;
+    };
+    let text = getResponseText(payload);
+    if (!text && isRefinement && (isOllamaChat || isOllamaGenerate)) {
+      // Thinking models can spend the initial token budget on their private trace before emitting the answer.
+      // Retry once with more generation room instead of surfacing an empty-answer error.
+      const retryBody = { ...activeBody, options: { ...(activeBody.options || {}), num_predict: Math.max(1024, activeBody.options?.num_predict || 0) } };
+      response = await fetchWithBody(retryBody);
+      if (!response.ok) throw new Error(await errorMessage(response));
+      payload = await response.json();
+      text = getResponseText(payload);
     }
     if (!text) {
       if (isOllamaChat || isOllamaGenerate) {
         const message = payload?.message;
         const available = message && typeof message === 'object' ? Object.keys(message).join(', ') : Object.keys(payload || {}).join(', ');
-        throw new Error(`Ollama returned no displayable text for “${model.id}”${available ? ` (response fields: ${available})` : ''}. Check that this model supports chat and try its Ollama tag as the Model ID.`);
+        const reason = payload?.done_reason ? ` Ollama stopped because of “${payload.done_reason}”.` : '';
+        throw new Error(`Ollama did not return a final answer for “${model.id}”.${reason}${available ? ` Response fields: ${available}.` : ''} Check that the model is available and supports chat.`);
       }
       const blockReason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason;
       throw new Error(blockReason ? `The provider returned no text (${blockReason}).` : 'The provider returned a successful response without any text. Check the selected model and its response format.');
