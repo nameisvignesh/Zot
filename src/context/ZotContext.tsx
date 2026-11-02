@@ -749,9 +749,11 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       refinementMetrics = refResult.metrics;
       await new Promise(r => setTimeout(r, 80));
     }
-    const inputTokens = params.refine ? countTokens(processedPrompt) : originalTokens;
-    const tokensSaved = Math.max(0, originalTokens - inputTokens);
-    const reductionPct = originalTokens > 0 ? Number(((tokensSaved / originalTokens) * 100).toFixed(1)) : 0;
+    let inputTokens = params.refine ? countTokens(processedPrompt) : originalTokens;
+    let outputTokens = 0;
+    let modelLatencyMs = 0;
+    let tokensSaved = Math.max(0, originalTokens - inputTokens);
+    let reductionPct = originalTokens > 0 ? Number(((tokensSaved / originalTokens) * 100).toFixed(1)) : 0;
     setExecutionPlan(prev => prev.map((s, idx) => idx === 1 ? { ...s, status: 'completed', durationMs: 42, outputSummary: params.refine ? `${inputTokens} tokens (-${reductionPct}%)` : 'Raw tokens passed' } : s));
 
     // Stage 3: Routing & Tier Selection
@@ -782,25 +784,31 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Stage 4: Generate a response with the selected provider/model.
     setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'running' } : s));
     let generatedResponse = '';
-    let outputTokens = 0;
     let timeToFirstToken = 0;
     let executionError = '';
+    let requestStartedAt = performance.now();
     try {
+      requestStartedAt = performance.now();
       const modelResult = await requestModelChat(selectedModel, [{ role: 'user', content: processedPrompt }], settings.request_timeout_ms);
       generatedResponse = modelResult.text;
-      outputTokens = countTokens(generatedResponse);
+      modelLatencyMs = modelResult.latencyMs;
+      inputTokens = modelResult.inputTokens ?? inputTokens;
+      outputTokens = modelResult.outputTokens ?? countTokens(generatedResponse);
+      tokensSaved = Math.max(0, originalTokens - inputTokens);
+      reductionPct = originalTokens > 0 ? Number(((tokensSaved / originalTokens) * 100).toFixed(1)) : 0;
       timeToFirstToken = modelResult.latencyMs;
       setStreamingOutput(generatedResponse);
       params.onStreamChunk?.(generatedResponse);
       setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'completed', durationMs: modelResult.latencyMs, outputSummary: `${outputTokens} response tokens generated` } : s));
     } catch (error) {
+      modelLatencyMs = Math.round(performance.now() - requestStartedAt);
       executionError = error instanceof Error ? error.message : 'The model request failed.';
       setExecutionPlan(prev => prev.map((s, idx) => idx === 3 ? { ...s, status: 'failed', outputSummary: executionError } : s));
     }
 
     // Stage 5: Telemetry Sink
     setExecutionPlan(prev => prev.map((s, idx) => idx === 4 ? { ...s, status: 'running' } : s));
-    const totalDuration = Math.round(performance.now() - startTime);
+    const totalDuration = modelLatencyMs || Math.round(performance.now() - startTime);
     const tokensPerSec = Number(((outputTokens / (Math.max(1, totalDuration) / 1000))).toFixed(1));
 
     const newRecord: RequestRecord = {

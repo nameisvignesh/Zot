@@ -8,6 +8,8 @@ export interface ChatTurn {
 export interface ModelRequestResult {
   text: string;
   latencyMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export interface DiscoveredModel {
@@ -147,7 +149,8 @@ export const requestModelChat = async (
   if (!model.api_key && !/\/api\/(?:chat|generate)$/.test(model.endpoint)) throw new Error('API_KEY_REQUIRED');
 
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const effectiveTimeoutMs = model.type === 'local' ? Math.max(timeoutMs, 180000) : timeoutMs;
+  const timer = window.setTimeout(() => controller.abort(), effectiveTimeoutMs);
   const started = performance.now();
   const provider = model.provider.toLowerCase();
   const isAnthropic = provider.includes('anthropic') || provider.includes('claude');
@@ -157,6 +160,7 @@ export const requestModelChat = async (
   const isHuggingFaceInference = /api-inference\.huggingface\.co/i.test(endpoint) && /\/models\//.test(endpoint);
   const isOllamaChat = /\/api\/chat$/.test(endpoint);
   const isOllamaGenerate = /\/api\/generate$/.test(endpoint);
+  const isRefinement = messages.some(message => /return only the refined prompt/i.test(message.content));
   const isOpenAIResponses = /\/responses$/.test(endpoint);
   const isGoogleOpenAiCompat = isGoogle && endpoint.includes('generativelanguage.googleapis.com') && endpoint.includes('/openai/');
   const googleModelId = normalizeModelId(model);
@@ -196,9 +200,9 @@ export const requestModelChat = async (
       : isHuggingFaceInference
       ? { inputs: messages.map(message => `${message.role}: ${message.content}`).join('\n'), parameters: { max_new_tokens: 512, temperature: 0.2 }, options: { wait_for_model: true } }
       : isOllamaChat
-      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, think: false, options: { temperature: 0.2, num_predict: 512 } }
+      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, think: false, keep_alive: '2m', options: { temperature: 0.2, num_predict: isRefinement ? 192 : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64 } }
       : isOllamaGenerate
-      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, think: false, options: { temperature: 0.2, num_predict: 512 } }
+      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, think: false, keep_alive: '2m', options: { temperature: 0.2, num_predict: isRefinement ? 192 : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64 } }
       : isOpenAIResponses
       ? { model: requestModelId, input: messages.map(message => ({ role: message.role, content: [{ type: 'input_text', text: message.content }] })), max_output_tokens: 512, temperature: 0.2 }
       : { model: requestModelId, messages, max_tokens: 512, temperature: 0.2, stream: false };
@@ -227,9 +231,11 @@ export const requestModelChat = async (
       const blockReason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason;
       throw new Error(blockReason ? `The provider returned no text (${blockReason}).` : 'The provider returned a successful response without any text. Check the selected model and its response format.');
     }
-    return { text, latencyMs: Math.round(performance.now() - started) };
+    const inputTokens = Number(payload?.usage?.prompt_tokens ?? payload?.usage?.input_tokens ?? payload?.usageMetadata?.promptTokenCount ?? payload?.prompt_eval_count);
+    const outputTokens = Number(payload?.usage?.completion_tokens ?? payload?.usage?.output_tokens ?? payload?.usageMetadata?.candidatesTokenCount ?? payload?.eval_count);
+    return { text, latencyMs: Math.round(performance.now() - started), ...(Number.isFinite(inputTokens) && inputTokens > 0 ? { inputTokens } : {}), ...(Number.isFinite(outputTokens) && outputTokens > 0 ? { outputTokens } : {}) };
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('The model request timed out.');
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error(model.type === 'local' ? 'The local model did not finish within 3 minutes. On low-memory devices, try a smaller quantized model, reduce the prompt length, and close other memory-heavy apps.' : 'The model request timed out. Check the provider status and try again.');
     throw error;
   } finally {
     window.clearTimeout(timer);
@@ -253,8 +259,15 @@ export const testModelConnection = async (model: Model, timeoutMs = 10000) => {
       if (!response.ok) throw new Error(await errorMessage(response));
       const payload = await response.json();
       const configuredModel = normalizeModelId(model).replace(/-latest$/, '');
-      const supported = (payload.models || []).some((item: any) => String(item.name || '').replace(/^models\//, '') === configuredModel && (item.supportedGenerationMethods || []).includes('generateContent'));
-      if (!supported) return { ok: false, message: `Key is valid, but model “${model.id}” was not listed with generateContent access. Use Find models to select an available model.` };
+      const supported = (payload.models || []).some((item: any) => String(item.name || '').replace(/^models\//, '').replace(/-latest$/, '') === configuredModel && (item.supportedGenerationMethods || []).includes('generateContent'));
+      if (!supported) {
+        try {
+          const live = await requestModelChat(model, [{ role: 'user', content: 'Reply with OK.' }], timeoutMs);
+          return { ok: true, message: `Google accepted the configured model request in ${live.latencyMs}ms. The model is available even though its catalog entry did not exactly match the configured ID.` };
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : `The key is valid, but Google did not list or accept model “${model.id}”.` };
+        }
+      }
       const result = await requestModelChat(model, [{ role: 'user', content: 'Reply with OK.' }], timeoutMs);
       return { ok: true, message: `Google model access verified with a live response in ${result.latencyMs}ms.` };
     } catch (error) {

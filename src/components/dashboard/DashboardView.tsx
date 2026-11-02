@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Github, ListChecks } from 'lucide-react';
+import { ArrowRight, Github, ListChecks, Server, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 
 export const DashboardView: React.FC = () => {
@@ -41,6 +41,7 @@ export const DashboardView: React.FC = () => {
           <article><strong>{t('dashboard.learnLocal')}</strong><p>{t('dashboard.learnLocalText')}</p></article>
           <article><strong>{t('dashboard.learnProviders')}</strong><p>{t('dashboard.learnProvidersText')}</p></article>
         </div>
+        <div className="mt-8"><div className="eyebrow">GET STARTED</div><h2>Set up ZOT in three steps</h2><div className="learn-grid mt-4"><button className="panel p-4 text-left" onClick={() => requestNavigation('models')}><Server size={18} className="accent" /><strong className="block mt-3">1. Configure a model</strong><p className="muted text-xs mt-2">Connect Ollama locally or add a hosted provider with your own API key.</p><span className="button mt-2">Open Models <ArrowRight size={13} /></span></button><button className="panel p-4 text-left" onClick={() => requestNavigation('settings')}><SlidersHorizontal size={18} className="accent" /><strong className="block mt-3">2. Review preferences</strong><p className="muted text-xs mt-2">Choose a default model, currency, and routing behavior.</p><span className="button mt-2">Open Settings <ArrowRight size={13} /></span></button><button className="panel p-4 text-left" onClick={() => requestNavigation('routing')}><Sparkles size={18} className="accent" /><strong className="block mt-3">3. Route a prompt</strong><p className="muted text-xs mt-2">Submit a prompt and review its measured latency, tokens, and cost.</p><span className="button mt-2">Open Prompt Router <ArrowRight size={13} /></span></button></div></div>
       </section>
     </div>
   );

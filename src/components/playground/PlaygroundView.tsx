@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bot, Send, Trash2 } from 'lucide-react';
+import { Bot, Download, Send, Trash2 } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { ChatTurn, requestModelChat } from '../../lib/modelClient';
 
@@ -49,14 +49,25 @@ export const PlaygroundView: React.FC = () => {
   };
 
   const clearChat = () => {
+    if (isSending || isExecuting) return;
     setMessage('');
     setMessages([{ role: 'system', text: t('playground.welcome') }]);
+  };
+
+  const downloadChat = () => {
+    const markdown = ['# ZOT Playground conversation', '', ...messages.flatMap(item => [`### ${item.role[0].toUpperCase()}${item.role.slice(1)}`, '', item.text, ''])].join('\n');
+    const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `zot-chat-${new Date().toISOString().slice(0, 16).replaceAll(':', '-')}.md`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
     <div className="space-y-6">
       <div className="page-heading"><div><div className="eyebrow">{t('playground.eyebrow')}</div><h1>{t('playground.title')}</h1><p>{t('playground.description')}</p></div><div className="field min-w-[230px]"><label htmlFor="chat-model">{t('playground.model')}</label><select id="chat-model" className="select" value={modelId} onChange={event => setModelId(event.target.value)}><option value="auto">{t('playground.auto')}</option>{enabledModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select></div></div>
-      <div className="panel chat"><div className="panel-header"><div className="panel-title flex items-center gap-2"><Bot size={15} className="accent" /> {t('playground.chat')}</div><div className="flex items-center gap-2"><span className="badge">{modelId === 'auto' ? t('playground.auto') : models.find(model => model.id === modelId)?.name}</span><button type="button" className="button" onClick={clearChat} aria-label={t('playground.clear')} title={t('playground.clear')}><Trash2 size={14} /><span className="hidden sm:inline">{t('playground.clear')}</span></button></div></div><div className="chat-messages">{messages.map((item, index) => <div key={`${item.role}-${index}`} className={`chat-message ${item.role}`}>{item.text}</div>)}</div><form className="chat-input" onSubmit={send}><input className="input" value={message} onChange={event => setMessage(event.target.value)} placeholder={t('playground.placeholder')} /><button className="button primary" type="submit" disabled={!message.trim() || isExecuting || isSending || enabledModels.length === 0}><Send size={15} /> {isSending ? t('playground.sending') : t('playground.send')}</button></form></div>
+      <div className="panel chat"><div className="panel-header"><div className="panel-title flex items-center gap-2"><Bot size={15} className="accent" /> {t('playground.chat')}</div><div className="flex items-center gap-2"><span className="badge">{modelId === 'auto' ? t('playground.auto') : models.find(model => model.id === modelId)?.name}</span><button type="button" className="button" onClick={downloadChat} disabled={isSending || isExecuting} aria-label="Download conversation as Markdown" title="Download conversation as Markdown"><Download size={14} /></button><button type="button" className="button" onClick={clearChat} disabled={isSending || isExecuting} aria-label={t('playground.clear')} title={t('playground.clear')}><Trash2 size={14} /><span className="hidden sm:inline">{t('playground.clear')}</span></button></div></div><div className="chat-messages">{messages.map((item, index) => <div key={`${item.role}-${index}`} className={`chat-message ${item.role}`}>{item.text}</div>)}</div><form className="chat-input" onSubmit={send}><input className="input" value={message} onChange={event => setMessage(event.target.value)} placeholder={t('playground.placeholder')} /><button className="button primary" type="submit" disabled={!message.trim() || isExecuting || isSending || enabledModels.length === 0}><Send size={15} /> {isSending ? t('playground.sending') : t('playground.send')}</button></form></div>
     </div>
   );
 };
