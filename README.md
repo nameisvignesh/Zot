@@ -7,7 +7,7 @@ Route prompts across local and hosted language models with visible task classifi
 
 <p align="center">
 <a href="https://nameisvignesh.github.io/Zot/"><img alt="Live demo" src="https://img.shields.io/badge/Live%20demo-GitHub%20Pages-181717?logo=github" /></a>
-<a href="https://github.com/nameisvignesh/Zot/actions/workflows/deploy-pages.yml"><img alt="Deploy status" src="https://github.com/nameisvignesh/Zot/actions/workflows/deploy-pages.yml/badge.svg" /></a>
+<a href="https://github.com/nameisvignesh/Zot/actions/workflows/deploy.yml"><img alt="Deploy status" src="https://github.com/nameisvignesh/Zot/actions/workflows/deploy.yml/badge.svg" /></a>
 <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg" /></a>
 <img alt="React 19" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" />
 <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white" />
@@ -39,10 +39,16 @@ ZOT is a frontend application. Local use does not require a ZOT server or databa
 
 ### Language composition
 
-GitHub calculates this repository language chart from tracked source files.
+The chart below uses the tracked source byte counts reported by GitHub Linguist.
 
 <p align="center">
-<a href="https://github.com/nameisvignesh/Zot"><img alt="ZOT language breakdown" src="https://github-readme-stats.vercel.app/api/top-langs/?username=nameisvignesh&repo=Zot&layout=compact&theme=transparent&hide_border=true" /></a>
+<img alt="ZOT language breakdown: TypeScript 92.35%, CSS 7.06%, HTML 0.59%" src="public/zot-language-breakdown.svg" width="760" />
+</p>
+
+## Repository stars
+
+<p align="center">
+<img alt="ZOT GitHub stars over time" src="public/zot-star-history.svg" width="760" />
 </p>
 
 ## Features
@@ -82,22 +88,36 @@ A valid key does not guarantee access to every model. Model access, billing, reg
 
 ## Ollama local model
 
-The recommended starter is **LFM2.5 2.6B**. It is optional: installing ZOT does not download model weights.
+The recommended starter is [Liquid AI LFM2.5 2.6B on Ollama](https://ollama.com/LiquidAI/lfm2.5-2.6b). It is optional: installing ZOT does not download model weights. Ollama lists its `q4_K_M` quantized file at about 1.7 GB; model files are not the full amount of memory a running system needs.
 
 1. Install Ollama from [ollama.com/download](https://ollama.com/download) and start it.
 2. Download the model:
    ```sh
-   ollama pull lfm2.5:2.6b
+   ollama pull LiquidAI/lfm2.5-2.6b
    ```
 3. Confirm the model is installed:
    ```sh
    ollama list
    ```
 4. In ZOT **Models**, edit the local entry or add a local model.
-5. Set connection type **Local**, provider **Ollama**, model ID `lfm2.5:2.6b`, and endpoint `http://localhost:11434/api/chat`.
+5. Set connection type **Local**, provider **Ollama**, model ID `LiquidAI/lfm2.5-2.6b`, endpoint `http://localhost:11434/api/chat`, and context length to `4096` for a memory-constrained computer.
 6. Save and select **Test connection**. Then select it in the Router, Playground, or Refinement.
 
 Ollama normally serves its local API on port 11434. If the browser cannot connect, check that Ollama is running and that firewall or browser security settings allow the page to reach the local API.
+
+### Choose a local model for your hardware
+
+These are practical starting points, not hard minimums. Actual memory use also includes the operating system, Ollama, ZOT's browser, context/KV cache, and other applications. Keep extra RAM and VRAM free; model download size alone is not a safe hardware estimate.
+
+| Computer available | Suggested choice | Graphics and memory notes |
+| --- | --- | --- |
+| 2-4 GB system RAM | Use a hosted API model; avoid a local 2.6B model | The 1.7 GB model file leaves too little room for the OS, browser, and inference context. |
+| 8 GB system RAM | LFM2.5 2.6B, Q4_K_M | A discrete GPU is optional; CPU or integrated graphics can run it more slowly. Start with a short prompt and a 2K-4K context. |
+| 16 GB system RAM | LFM2.5 2.6B or Qwen3.5 4B | Qwen3.5 4B files are about 3.3-4.0 GB; a supported GPU with about 8 GB VRAM is a useful target, while CPU-only is also possible. |
+| 32 GB system RAM | Qwen3.5 9B | Qwen3.5 9B files are about 6.6-7.6 GB; target 12 GB or more VRAM for a comfortable GPU-resident setup. |
+| 64 GB system RAM | Qwen3.5 27B | Qwen3.5 27B files are about 17-20 GB; target 24 GB or more VRAM, or use system/unified memory and expect slower generation. |
+
+For a small or older computer, start with LFM2.5 2.6B or use a hosted API instead of waiting on a model that cannot fit. For larger local models, check the exact quantized file size before downloading. Ollama supports CPU inference and supported NVIDIA, AMD, Apple Metal, and Vulkan devices; GPU support depends on the operating system, card, and driver. See [Ollama hardware support](https://docs.ollama.com/gpu). The model file sizes above are from the [official Ollama LFM2.5 listing](https://ollama.com/LiquidAI/lfm2.5-2.6b) and [Qwen3.5 tags](https://ollama.com/library/qwen3.5/tags).
 
 ### Low-memory computers
 
@@ -123,7 +143,7 @@ Model settings, API keys, preferences, and request history are stored in this br
 
 ## Deployment
 
-A GitHub Actions workflow builds and deploys the site to GitHub Pages after a push to the default branch. For a fork, open **Settings → Pages**, choose **GitHub Actions** as the deployment source, then push a commit or run the Pages workflow manually.
+A GitHub Actions workflow builds the site after a push to `main` and publishes the generated files to the `gh-pages` branch. For a fork, open **Settings → Pages** and select **Deploy from a branch**, then choose `gh-pages` and the root folder.
 
 ## Project structure
 
@@ -145,7 +165,7 @@ Issues and pull requests are welcome. Include reproduction steps, browser and pr
 
 If ZOT is useful to you, you can support development here:
 
-<p align="center"><img src="public/buy-me-a-coffee-qr-code.png" width="320" alt="Buy Me a Coffee QR code" /></p>
+<table align="center"><tr><td><img src="public/buy-me-a-coffee-qr.png" width="160" alt="Buy Me a Coffee QR code" /></td><td><strong>Buy me a coffee</strong><br />Scan the QR code to support ZOT's development.</td></tr></table>
 
 ## License
 
