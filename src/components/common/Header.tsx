@@ -13,7 +13,10 @@ export const Header: React.FC = () => {
         <span>ZOT</span>
       </button>
       <div className="topbar-actions">
-        <span className="status-indicator"><span className="status-dot" data-status={gatewayStatus} title={`Super dot · ${gatewayStatus === 'ready' ? 'healthy' : gatewayStatus === 'error' ? 'error detected' : 'not configured or checking'}`} aria-label={`Super dot status: ${gatewayStatus}`} /><span className="topbar-status">Super dot</span></span>
+        <span className="status-indicator" data-tooltip="Super dot" aria-label={`Local server status: ${gatewayStatus}`}>
+          <span className="status-dot" data-status={gatewayStatus} />
+          <span className="topbar-status">Local server</span>
+        </span>
         <a href="https://github.com/nameisvignesh/Zot" target="_blank" rel="noreferrer" aria-label="Open GitHub">
           <Github size={17} />
         </a>

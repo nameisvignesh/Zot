@@ -44,7 +44,7 @@ a { color: inherit; text-decoration: none; }
 .topbar { height: 58px; border-bottom: 1px solid #202020; display: flex; align-items: center; justify-content: space-between; padding: 0 max(20px, calc((100vw - 1180px) / 2)); background: rgba(9, 9, 9, .96); position: sticky; top: 0; z-index: 20; }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: #fff; background: none; border: 0; font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
 .brand { position: relative; }
-.logo-mark { border-radius: 999px; object-fit: cover; background: #000; display: block; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+.logo-mark { border-radius: 50%; object-fit: contain; background: transparent; display: block; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
 .brand:hover .logo-mark { transform: rotate(180deg) scale(1.08); }
 .brand::before, .brand::after { content: ''; position: absolute; left: -8px; top: -8px; width: 48px; height: 48px; opacity: 0; pointer-events: none; }
 .brand::before { background: linear-gradient(35deg, transparent 43%, #f4f4f5 46% 51%, transparent 54%) 5px 0/11px 12px no-repeat, linear-gradient(125deg, transparent 43%, #f4f4f5 46% 51%, transparent 54%) 30px 5px/12px 11px no-repeat, linear-gradient(35deg, transparent 43%, #f4f4f5 46% 51%, transparent 54%) 29px 34px/12px 11px no-repeat, linear-gradient(125deg, transparent 43%, #f4f4f5 46% 51%, transparent 54%) 0 30px/11px 12px no-repeat; }
@@ -59,7 +59,9 @@ a { color: inherit; text-decoration: none; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; color: #21c37a; background: currentColor; box-shadow: 0 0 0 3px rgba(33, 195, 122, .1); }
 .status-dot[data-status="connecting"] { color: var(--warning); background: currentColor; }
 .status-dot[data-status="error"] { color: #ef5b5b; background: currentColor; }
-.status-indicator { display: inline-flex; align-items: center; gap: 9px; }
+.status-indicator { display: inline-flex; align-items: center; gap: 9px; position: relative; }
+.status-indicator::after { content: attr(data-tooltip); position: absolute; z-index: 30; top: calc(100% + 10px); right: 0; padding: 6px 10px; color: #f4f4f5; background: #17181b; border: 1px solid #35383f; border-radius: 9px; font-size: 11px; line-height: 1.2; white-space: nowrap; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity .15s ease, transform .15s ease, visibility .15s ease; pointer-events: none; }
+.status-indicator:hover::after, .status-indicator:focus-within::after { opacity: 1; visibility: visible; transform: translateY(0); }
 .status-dot { animation: status-pulse 1.8s ease-out infinite; }
 .status-dot[data-status="connecting"] { animation-duration: 2.2s; }
 @keyframes status-pulse { 0% { box-shadow: 0 0 0 0 currentColor; } 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
