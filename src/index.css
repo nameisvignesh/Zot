@@ -133,6 +133,14 @@ a { color: inherit; text-decoration: none; }
 .empty-state { min-height: 130px; display: grid; place-items: center; color: #686868; font-size: 12px; text-align: center; padding: 24px; }
 .switch-row { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid #262626; }
 .switch-row:last-child { border-bottom: 0; }
+.model-row { align-items: flex-start; }
+.model-row-content { min-width: 0; flex: 1; }
+.model-row-copy { min-width: 0; }
+.model-row-copy > .muted { overflow-wrap: anywhere; }
+.model-row-badges { align-items: center; }
+.model-row-error { display: block; width: fit-content; max-width: 100%; margin-top: 8px; overflow-wrap: anywhere; line-height: 1.45; }
+.model-row-actions { flex: 0 0 auto; }
+.model-row-actions .model-test-button { min-width: 116px; white-space: nowrap; }
 .switch { width: 38px; height: 22px; border: 0; border-radius: 999px; padding: 3px; background: #333; }
 .switch::after { content: ''; display: block; width: 16px; height: 16px; border-radius: 50%; background: #aaa; transition: transform .15s; }
 .switch.on { background: #fff; }

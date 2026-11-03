@@ -95,23 +95,18 @@ const errorMessage = async (response: Response) => {
   }
 };
 
-export const normalizeModelEndpoint = (endpoint: string, provider = '') => {
-  const clean = endpoint.trim().replace(/\/+$/, '');
+export const normalizeModelEndpoint = (endpoint: string) => endpoint.trim();
+
+const resolveModelRequestEndpoint = (endpoint: string, provider: string) => {
+  const clean = normalizeModelEndpoint(endpoint).replace(/\/+$/, '');
   const providerName = provider.toLowerCase();
-  if (providerName.includes('anthropic') || providerName.includes('claude')) {
-    return clean.endsWith('/messages') ? clean : `${clean}/messages`;
-  }
-  if (/^https?:\/\/(localhost|127\.0\.0\.1):11434\/?$/i.test(clean)) return `${clean}/api/chat`;
-  if (/\/models\/[^/]+$/.test(clean) && /api-inference\.huggingface\.co/i.test(clean)) return clean;
-  if (clean.endsWith('/api/chat')) return clean;
-  if (clean.endsWith('/api/generate')) return clean;
-  if (clean.endsWith('/responses')) return clean;
-  if (clean.endsWith('/chat/completions')) return clean;
-  if (clean.endsWith('/openai')) return `${clean}/chat/completions`;
-  if (clean.endsWith('/v1beta/openai')) return `${clean}/chat/completions`;
-  if (clean.endsWith('/v1beta/openai/chat/completions')) return clean;
-  if (clean.endsWith('/v1beta')) return `${clean}/openai/chat/completions`;
-  if (clean.endsWith('/v1')) return `${clean}/chat/completions`;
+  if (
+    /\/(?:chat\/completions|responses|messages|api\/chat|api\/generate)$/.test(clean)
+    || (/\/models\/[^/]+$/.test(clean) && /api-inference\.huggingface\.co/i.test(clean))
+  ) return clean;
+  if (providerName.includes('anthropic') || providerName.includes('claude')) return `${clean}/messages`;
+  if (/^https?:\/\/(?:localhost|127\.0\.0\.1):11434$/i.test(clean)) return `${clean}/api/chat`;
+  if (clean.endsWith('/v1') || clean.endsWith('/v1beta/openai')) return `${clean}/chat/completions`;
   return clean;
 };
 
@@ -160,7 +155,7 @@ export const requestModelChat = async (
   const provider = model.provider.toLowerCase();
   const isAnthropic = provider.includes('anthropic') || provider.includes('claude');
   const isGoogle = provider.includes('google') || provider.includes('gemini');
-  const endpoint = normalizeModelEndpoint(model.endpoint, model.provider);
+  const endpoint = normalizeModelEndpoint(model.endpoint);
   const useGoogleNativeApi = isGoogle && endpoint.includes('generativelanguage.googleapis.com') && !endpoint.includes('/openai/');
   const isHuggingFaceInference = /api-inference\.huggingface\.co/i.test(endpoint) && /\/models\//.test(endpoint);
   const isOllamaChat = /\/api\/chat$/.test(endpoint);
@@ -173,9 +168,7 @@ export const requestModelChat = async (
   const googleBase = endpoint.includes('/v1beta') ? `${endpoint.split('/v1beta')[0]}/v1beta` : endpoint;
   const requestEndpoint = useGoogleNativeApi
     ? `${googleBase}/models/${googleModelId}:generateContent?key=${encodeURIComponent(model.api_key)}`
-    : isGoogleOpenAiCompat
-      ? endpoint
-      : endpoint;
+    : resolveModelRequestEndpoint(endpoint, model.provider);
 
   try {
     const headers: Record<string, string> = {
@@ -281,6 +274,12 @@ export const requestModelChat = async (
     return { text, latencyMs: Math.round(performance.now() - started), ...(Number.isFinite(inputTokens) && inputTokens > 0 ? { inputTokens } : {}), ...(Number.isFinite(outputTokens) && outputTokens > 0 ? { outputTokens } : {}) };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error(model.type === 'local' ? 'The local model did not finish within 3 minutes. On low-memory devices, try a smaller quantized model, reduce the prompt length, and close other memory-heavy apps.' : 'The model request timed out. Check the provider status and try again.');
+    if (error instanceof TypeError) {
+      if (provider.includes('nvidia')) {
+        throw new Error('NVIDIA NIM blocks this browser-origin request (CORS). The endpoint is reachable, but this static app needs a trusted server-side proxy to call it.');
+      }
+      throw new Error('The browser could not reach the model endpoint. This may be caused by provider CORS restrictions or a network/endpoint issue. Check that the provider allows requests from this browser origin.');
+    }
     throw error;
   } finally {
     window.clearTimeout(timer);
