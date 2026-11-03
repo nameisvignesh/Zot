@@ -108,6 +108,10 @@ public/                Static assets
 
 Issues and pull requests are welcome. Include reproduction steps, browser and provider details, and non-secret error text. Never include API keys, access tokens, or private prompts.
 
+### AI assistance
+
+AI tools used in the development of this project include ChatGPT (OpenAI) and Claude (Anthropic). The GitHub Contributors panel is generated from commits associated with GitHub accounts, so listing AI tools here does not add them to that panel.
+
 ## License
 
 ZOT is distributed under the [MIT License](LICENSE).
