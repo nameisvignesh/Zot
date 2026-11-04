@@ -60,10 +60,25 @@ export const discoverProviderModels = async (provider: string, endpoint: string,
   }
 };
 
+const extractTextContent = (value: any): string => {
+  if (typeof value === 'string') return value.trim();
+  if (!Array.isArray(value)) return '';
+  return value
+    .map(part => typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : '')
+    .join('')
+    .trim();
+};
+
 const extractText = (payload: any): string => {
   const choice = payload?.choices?.[0];
   const parts = payload?.candidates?.[0]?.content?.parts;
-  const anthropicParts = payload?.content;
+  const responseParts = Array.isArray(payload?.output)
+    ? payload.output
+      .filter((item: any) => item?.type === 'message')
+      .flatMap((item: any) => Array.isArray(item?.content)
+        ? item.content.filter((part: any) => part?.type === 'output_text' || part?.type === 'text')
+        : [])
+    : undefined;
   const candidates = [
     choice?.message?.content,
     choice?.text,
@@ -71,10 +86,11 @@ const extractText = (payload: any): string => {
     payload?.response,
     payload?.message?.content,
     Array.isArray(payload) ? payload[0]?.generated_text : undefined,
-    Array.isArray(parts) ? parts.map(part => part?.text || '').join('') : undefined,
-    Array.isArray(anthropicParts) ? anthropicParts.map(part => part?.text || '').join('') : undefined,
+    parts,
+    payload?.content,
+    responseParts,
   ];
-  return candidates.find(value => typeof value === 'string' && value.trim().length > 0)?.trim() || '';
+  return candidates.map(extractTextContent).find(value => value.length > 0) || '';
 };
 
 const errorMessage = async (response: Response) => {
@@ -169,6 +185,12 @@ export const requestModelChat = async (
   const requestEndpoint = useGoogleNativeApi
     ? `${googleBase}/models/${googleModelId}:generateContent?key=${encodeURIComponent(model.api_key)}`
     : resolveModelRequestEndpoint(endpoint, model.provider);
+  const contextLength = isOllamaChat || isOllamaGenerate
+    ? Math.min(model.context_length || 4096, 4096)
+    : model.context_length || 16384;
+  const estimatedPromptTokens = Math.ceil(messages.reduce((total, message) => total + message.content.length, 0) / 4) + messages.length * 4;
+  const remainingContextTokens = Math.max(1, contextLength - estimatedPromptTokens - 128);
+  const maxOutputTokens = Math.max(1, Math.min(4096, Math.floor(contextLength / 2), remainingContextTokens));
 
   try {
     const headers: Record<string, string> = {
@@ -179,13 +201,15 @@ export const requestModelChat = async (
           ? { Authorization: `Bearer ${model.api_key}` }
           : !useGoogleNativeApi && !isGoogleOpenAiCompat && model.api_key ? { Authorization: `Bearer ${model.api_key}` } : {}),
     };
-    const ollamaRefinementTokens = Math.min(768, Math.max(512, Math.ceil(messages.reduce((total, message) => total + message.content.length, 0) / 4)));
     const ollamaRefinementFormat = {
       type: 'object',
       properties: { refined_prompt: { type: 'string' } },
       required: ['refined_prompt'],
       additionalProperties: false,
     };
+    const ollamaNumPredict = isRefinement
+      ? Math.min(maxOutputTokens, Math.min(768, Math.max(512, Math.ceil(messages.reduce((total, message) => total + message.content.length, 0) / 4))))
+      : maxOutputTokens;
     const body = useGoogleNativeApi
       ? {
           contents: messages.filter(message => message.role !== 'system').map(message => ({
@@ -193,24 +217,24 @@ export const requestModelChat = async (
             parts: [{ text: message.content }],
           })),
           ...(messages.find(message => message.role === 'system') ? { systemInstruction: { parts: [{ text: messages.find(message => message.role === 'system')?.content }] } } : {}),
-          generationConfig: { maxOutputTokens: 512, temperature: 0.2 },
+          generationConfig: { maxOutputTokens, temperature: 0.2 },
         }
       : isAnthropic
       ? {
           model: requestModelId,
-          max_tokens: 512,
+          max_tokens: maxOutputTokens,
           messages: messages.filter(message => message.role !== 'system'),
           system: messages.find(message => message.role === 'system')?.content,
         }
       : isHuggingFaceInference
-      ? { inputs: messages.map(message => `${message.role}: ${message.content}`).join('\n'), parameters: { max_new_tokens: 512, temperature: 0.2 }, options: { wait_for_model: true } }
+      ? { inputs: messages.map(message => `${message.role}: ${message.content}`).join('\n'), parameters: { max_new_tokens: maxOutputTokens, temperature: 0.2 }, options: { wait_for_model: true } }
       : isOllamaChat
-      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, ...(isRefinement ? { think: false, format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
+      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, ...(isRefinement ? { think: false, format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: ollamaNumPredict, num_ctx: contextLength, num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOllamaGenerate
-      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, ...(isRefinement ? { think: false, format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: isRefinement ? ollamaRefinementTokens : 384, num_ctx: Math.min(model.context_length || 4096, 4096), num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
+      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, ...(isRefinement ? { think: false, format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: ollamaNumPredict, num_ctx: contextLength, num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOpenAIResponses
-      ? { model: requestModelId, input: messages.map(message => ({ role: message.role, content: [{ type: 'input_text', text: message.content }] })), max_output_tokens: 512, temperature: 0.2 }
-      : { model: requestModelId, messages, max_tokens: 512, temperature: 0.2, stream: false };
+      ? { model: requestModelId, input: messages.map(message => ({ role: message.role, content: [{ type: 'input_text', text: message.content }] })), max_output_tokens: maxOutputTokens, temperature: 0.2 }
+      : { model: requestModelId, messages, max_tokens: maxOutputTokens, temperature: 0.2, stream: false };
 
     const fetchWithBody = (requestBody: unknown) => fetch(requestEndpoint, {
       method: 'POST',
@@ -250,14 +274,57 @@ export const requestModelChat = async (
       return result;
     };
     let text = getResponseText(payload);
-    if (!text && isRefinement && (isOllamaChat || isOllamaGenerate)) {
-      // Thinking models can spend the initial token budget on their private trace before emitting the answer.
-      // Retry once with more generation room instead of surfacing an empty-answer error.
-      const retryBody = { ...activeBody, options: { ...(activeBody.options || {}), num_predict: Math.max(1024, activeBody.options?.num_predict || 0) } };
+    const outputLimitReached = (value: any) => value?.choices?.[0]?.finish_reason === 'length'
+      || value?.candidates?.[0]?.finishReason === 'MAX_TOKENS'
+      || value?.stop_reason === 'max_tokens'
+      || value?.incomplete_details?.reason === 'max_output_tokens'
+      || value?.done_reason === 'length';
+    const hasOutputLimitReached = outputLimitReached(payload);
+    const reportedInputTokens = Number(payload?.usage?.prompt_tokens ?? payload?.usage?.input_tokens ?? payload?.usageMetadata?.promptTokenCount ?? payload?.prompt_eval_count);
+    const estimatedInputTokens = Number.isFinite(reportedInputTokens) && reportedInputTokens > 0
+      ? reportedInputTokens
+      : estimatedPromptTokens;
+    const retryMaxOutputTokens = Math.max(0, Math.min(8192, contextLength - estimatedInputTokens - 128));
+    if (hasOutputLimitReached && retryMaxOutputTokens > maxOutputTokens) {
+      const retryBody = { ...activeBody };
+      if (useGoogleNativeApi) {
+        retryBody.generationConfig = { ...(activeBody.generationConfig || {}), maxOutputTokens: retryMaxOutputTokens };
+      } else if (isAnthropic) {
+        retryBody.max_tokens = retryMaxOutputTokens;
+      } else if (isHuggingFaceInference) {
+        retryBody.parameters = { ...(activeBody.parameters || {}), max_new_tokens: retryMaxOutputTokens };
+      } else if (isOllamaChat || isOllamaGenerate) {
+        retryBody.options = { ...(activeBody.options || {}), num_predict: retryMaxOutputTokens };
+      } else if (isOpenAIResponses) {
+        retryBody.max_output_tokens = retryMaxOutputTokens;
+      } else {
+        retryBody.max_tokens = retryMaxOutputTokens;
+      }
       response = await fetchWithBody(retryBody);
       if (!response.ok) throw new Error(await errorMessage(response));
       payload = await response.json();
       text = getResponseText(payload);
+    } else if (hasOutputLimitReached) {
+      throw new Error(`The response from “${model.id}” reached its output limit. Shorten the prompt or use a model with a larger context window.`);
+    }
+    if (outputLimitReached(payload)) {
+      throw new Error(`The response from “${model.id}” was still incomplete after retrying with a larger output limit. Try a shorter prompt or a model with a larger context window.`);
+    }
+    if (!text && isRefinement && (isOllamaChat || isOllamaGenerate)) {
+      // Thinking models can spend the initial token budget on their private trace before emitting the answer.
+      // Retry once with more generation room instead of surfacing an empty-answer error.
+      const currentNumPredict = Number(activeBody.options?.num_predict) || 0;
+      const retryNumPredict = Math.min(retryMaxOutputTokens, Math.max(1024, currentNumPredict));
+      if (retryNumPredict > currentNumPredict) {
+        const retryBody = { ...activeBody, options: { ...(activeBody.options || {}), num_predict: retryNumPredict } };
+        response = await fetchWithBody(retryBody);
+        if (!response.ok) throw new Error(await errorMessage(response));
+        payload = await response.json();
+        text = getResponseText(payload);
+        if (outputLimitReached(payload)) {
+          throw new Error(`The response from “${model.id}” was still incomplete after retrying with a larger output limit. Try a shorter prompt or a model with a larger context window.`);
+        }
+      }
     }
     if (!text) {
       if (isOllamaChat || isOllamaGenerate) {
@@ -267,7 +334,15 @@ export const requestModelChat = async (
         throw new Error(`Ollama did not return a final answer for “${model.id}”.${reason}${available ? ` Response fields: ${available}.` : ''} Check that the model is available and supports chat.`);
       }
       const blockReason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason;
-      throw new Error(blockReason ? `The provider returned no text (${blockReason}).` : 'The provider returned a successful response without any text. Check the selected model and its response format.');
+      const choice = payload?.choices?.[0];
+      const finishReason = choice?.finish_reason || blockReason || payload?.stop_reason;
+      const message = choice?.message || payload?.message;
+      const responseFields = message && typeof message === 'object' ? Object.keys(message).join(', ') : '';
+      const details = [
+        finishReason ? `finish reason: ${finishReason}` : '',
+        responseFields ? `message fields: ${responseFields}` : '',
+      ].filter(Boolean).join('; ');
+      throw new Error(`The provider returned a successful response without user-facing text for “${model.id}”${details ? ` (${details})` : ''}. Check that the selected model and endpoint return text in the configured response format.`);
     }
     const inputTokens = Number(payload?.usage?.prompt_tokens ?? payload?.usage?.input_tokens ?? payload?.usageMetadata?.promptTokenCount ?? payload?.prompt_eval_count);
     const outputTokens = Number(payload?.usage?.completion_tokens ?? payload?.usage?.output_tokens ?? payload?.usageMetadata?.candidatesTokenCount ?? payload?.eval_count);

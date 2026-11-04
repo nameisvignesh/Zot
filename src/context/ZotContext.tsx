@@ -213,7 +213,13 @@ export const ZotProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Settings State with theme support
   const [settings, setSettings] = useState<ZotSettings>(() => {
     const merged = getStoredValue<Partial<ZotSettings>>('zot_settings_v2', {}, isObjectRecord);
-    return { ...DEFAULT_SETTINGS, ...merged, cost_currency: merged.cost_currency || 'INR' } as ZotSettings;
+    const savedMonthlyLimit = Number(merged.monthly_cost_limit);
+    return {
+      ...DEFAULT_SETTINGS,
+      ...merged,
+      cost_currency: merged.cost_currency || 'INR',
+      monthly_cost_limit: Math.max(100, Number.isFinite(savedMonthlyLimit) && savedMonthlyLimit > 0 ? savedMonthlyLimit : DEFAULT_SETTINGS.monthly_cost_limit),
+    } as ZotSettings;
   });
   const [settingsDraft, setSettingsDraft] = useState<ZotSettings>(() => settings);
 
@@ -939,4 +945,3 @@ export const useZot = () => {
   }
   return context;
 };
-

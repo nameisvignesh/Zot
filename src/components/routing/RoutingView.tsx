@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, Grid2X2, List, Pencil, Route, Send, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Check, Copy, ExternalLink, Grid2X2, List, Pencil, Route, Send, Trash2, X } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { routePrompt } from '../../lib/routingEngine';
 import { Model, RequestRecord } from '../../types';
@@ -13,28 +13,50 @@ export const RoutingView: React.FC = () => {
     try { return JSON.parse(sessionStorage.getItem('zot-route-record') || 'null') as RequestRecord | null; } catch { return null; }
   });
   const [view, setView] = useState<'grid' | 'table'>('grid');
-  const [preferredModel, setPreferredModel] = useState('');
+  const [preferredModel, setPreferredModel] = useState('auto');
   const [catalogQuery, setCatalogQuery] = useState('');
   const [copiedOutput, setCopiedOutput] = useState(false);
+  const [isPromptOpen, setIsPromptOpen] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const enabledModels = useMemo(() => models.filter(model => model.enabled), [models]);
+  useEffect(() => {
+    if (preferredModel !== 'auto' && !enabledModels.some(model => model.id === preferredModel)) {
+      setPreferredModel('auto');
+    }
+  }, [enabledModels, preferredModel]);
+  const automaticRoute = useMemo(
+    () => routePrompt(prompt, enabledModels),
+    [prompt, enabledModels],
+  );
   const publicSuggestion = useMemo(() => {
     if (publicModels.length === 0) return undefined;
     const decision = routePrompt(prompt, publicModels.map(model => ({ ...model, enabled: true })), undefined);
     return publicModels.find(model => model.id === decision.selected_model);
   }, [prompt, publicModels]);
-  const selectedModel = enabledModels.find(model => model.id === preferredModel);
+  const selectedModel = preferredModel === 'auto'
+    ? enabledModels.find(model => model.id === automaticRoute.selected_model)
+    : enabledModels.find(model => model.id === preferredModel);
   const tokenCount = routedRecord?.input_tokens ?? 0;
   const estimatedOutput = routedRecord?.output_tokens ?? 0;
   const visiblePublicModels = useMemo(() => publicModels.filter(model => `${model.name} ${model.provider} ${model.id}`.toLowerCase().includes(catalogQuery.toLowerCase())), [catalogQuery, publicModels]);
 
   const [routeError, setRouteError] = useState('');
+  useEffect(() => {
+    if (!isPromptOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsPromptOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPromptOpen]);
+
   const handleRoute = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!prompt.trim() || isExecuting || !selectedModel) return;
     setRouteError('');
     try {
-      const record = await runInference({ prompt, refine: false, preferredModelId: preferredModel });
+      const record = await runInference({ prompt, refine: false, preferredModelId: preferredModel === 'auto' ? undefined : preferredModel });
       setRoutedRecord(record);
       sessionStorage.setItem('zot-route-record', JSON.stringify(record));
       if (record.status === 'error') setRouteError(record.error_message || 'The selected model could not complete the request.');
@@ -53,6 +75,17 @@ export const RoutingView: React.FC = () => {
       window.setTimeout(() => setCopiedOutput(false), 1500);
     } catch {
       setRouteError('Clipboard access is unavailable in this browser. Select and copy the response text instead.');
+    }
+  };
+
+  const copyPrompt = async () => {
+    if (!routedRecord?.original_prompt) return;
+    try {
+      await navigator.clipboard.writeText(routedRecord.original_prompt);
+      setCopiedPrompt(true);
+      window.setTimeout(() => setCopiedPrompt(false), 1500);
+    } catch {
+      setRouteError('Clipboard access is unavailable in this browser. Select and copy the prompt text instead.');
     }
   };
 
@@ -82,7 +115,7 @@ export const RoutingView: React.FC = () => {
             <div className="field min-w-[250px] flex-1">
               <label htmlFor="preferred-model">{t('routing.target')}</label>
               <select id="preferred-model" className="select" value={preferredModel} onChange={event => setPreferredModel(event.target.value)}>
-                <option value="">No model selected</option>
+                <option value="auto">Auto route</option>
                 {enabledModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
               </select>
             </div>
@@ -104,7 +137,30 @@ export const RoutingView: React.FC = () => {
         <div className="panel">
           <div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Check size={15} className="text-emerald-400" /> {t('routing.lastDecision')}</div><div className="panel-subtitle">{routedRecord.status === 'error' ? 'Request failed' : `Response from ${routedRecord.model_name}`}</div></div><div className="flex items-center gap-2"><span className={routedRecord.status === 'error' ? 'badge warn' : 'badge success'}>{routedRecord.status}</span><button className="button" onClick={() => void copyOutput()} disabled={routedRecord.status === 'success' && !routedRecord.response_text}><Copy size={14} /> {copiedOutput ? 'Copied' : 'Copy output'}</button></div></div>
           <div className="panel-body"><pre className={`routing-output ${routedRecord.status === 'error' ? 'routing-output-error' : ''}`}>{routedRecord.status === 'error' ? routedRecord.error_message : routedRecord.response_text}</pre></div>
-          <div className="panel-body grid-3"><div><div className="metric-label">{t('routing.task')}</div><strong>{routedRecord.task_type}</strong></div><div><div className="metric-label">{t('routing.selectedModel')}</div><strong className="accent">{routedRecord.model_name}</strong></div><div><div className="metric-label">Prompt used</div><strong>{routedRecord.original_prompt}</strong></div></div>
+          <div className="panel-body grid-3"><div><div className="metric-label">{t('routing.task')}</div><strong>{routedRecord.task_type}</strong></div><div><div className="metric-label">{t('routing.selectedModel')}</div><strong className="accent">{routedRecord.model_name}</strong></div><div><div className="metric-label">Prompt used</div><button type="button" className="button px-3 py-1.5 text-xs" onClick={() => { setCopiedPrompt(false); setIsPromptOpen(true); }}>User Input</button></div></div>
+        </div>
+      )}
+
+      {isPromptOpen && routedRecord && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4"
+          onMouseDown={event => { if (event.target === event.currentTarget) setIsPromptOpen(false); }}
+        >
+          <section className="panel w-full max-w-2xl" role="dialog" aria-modal="true" aria-labelledby="routing-user-input-title">
+            <div className="panel-header">
+              <div>
+                <div id="routing-user-input-title" className="panel-title">User Input</div>
+                <div className="panel-subtitle">Prompt submitted for routing</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" className="button" onClick={() => void copyPrompt()}><Copy size={14} /> {copiedPrompt ? 'Copied' : 'Copy prompt'}</button>
+                <button type="button" className="button" onClick={() => setIsPromptOpen(false)} aria-label="Close user input"><X size={15} /></button>
+              </div>
+            </div>
+            <div className="panel-body">
+              <pre className="routing-output max-h-[60vh]" tabIndex={0}>{routedRecord.original_prompt}</pre>
+            </div>
+          </section>
         </div>
       )}
 
@@ -112,7 +168,7 @@ export const RoutingView: React.FC = () => {
         <div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Route size={15} className="accent" /> {t('routing.targets')}</div><div className="panel-subtitle">{t('routing.localReady')}{publicSuggestion ? ` · ${t('routing.publicSuggestion', { value: publicSuggestion.name })}` : ''}</div></div><span className="badge">{t('routing.enabled', { value: enabledModels.length })}</span></div>
         {view === 'grid' ? (
           <div className="panel-body grid-3">
-            {enabledModels.map(model => <ModelCard key={model.id} model={model} onSelect={() => setPreferredModel(model.id)} onEdit={() => requestModelEdit(model.id)} onDelete={() => { if (!model.is_builtin && window.confirm(`Delete “${model.name}” from your configured models?`)) { deleteModel(model.id); if (preferredModel === model.id) setPreferredModel(''); } }} selected={selectedModel?.id === model.id} />)}
+            {enabledModels.map(model => <ModelCard key={model.id} model={model} onSelect={() => setPreferredModel(model.id)} onEdit={() => requestModelEdit(model.id)} onDelete={() => { if (!model.is_builtin && window.confirm(`Delete “${model.name}” from your configured models?`)) { deleteModel(model.id); if (preferredModel === model.id) setPreferredModel('auto'); } }} selected={selectedModel?.id === model.id} />)}
           </div>
         ) : (
           <div className="table-wrap"><table className="data-table"><thead><tr><th>{t('routing.selectedModel')}</th><th>{t('routing.context')}</th><th>{t('routing.cost')} / 1K</th><th>{t('routing.getApiKey')}</th></tr></thead><tbody>{enabledModels.map(model => <tr key={model.id}><td><strong>{model.name}</strong><div className="muted">{model.provider}</div></td><td>{formatContext(model.context_length)}</td><td>{model.is_free ? t('routing.free') : formatCurrency(model.input_cost_per_1k + model.output_cost_per_1k)}</td><td><div className="flex gap-2"><ModelLink model={model} /><button className="button" title="Edit model configuration" aria-label={`Edit ${model.name}`} onClick={() => requestModelEdit(model.id)}><Pencil size={14} /></button></div></td></tr>)}</tbody></table></div>
