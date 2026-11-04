@@ -30,9 +30,6 @@
       <td width="58%">
         <img src="./public/readme-dashboard.png" alt="ZOT dashboard and prompt routing workspace" />
       </td>
-      <td width="42%">
-        <img src="./public/zot-star-history.svg" alt="ZOT GitHub star history" />
-      </td>
     </tr>
   </table>
 </div>
