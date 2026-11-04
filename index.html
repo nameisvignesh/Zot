@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Fix for environments/iframes where window.fetch is getter-only on Window.prototype
+      (function() {
+        try {
+          var originalFetch = typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : undefined;
+          var _fetch = originalFetch;
+          if (typeof window !== 'undefined') {
+            Object.defineProperty(window, 'fetch', {
+              get: function() {
+                return _fetch;
+              },
+              set: function(val) {
+                _fetch = val;
+              },
+              configurable: true,
+              enumerable: true
+            });
+          }
+        } catch (e) {
+          // Ignore error if property cannot be redefined
+        }
+      })();
+    </script>
+    <title>ZOT — Zero-Shot Prompt Router</title>
+    <meta name="description" content="A local-first zero-shot prompt router for configured AI models." />
+    <meta property="og:title" content="Zot" />
+    <meta property="og:description" content="A local-first zero-shot prompt router for configured AI models." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="./zot-logo.png" />
+    <script type="module" crossorigin src="./assets/index-DbzmB6lp.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/icons-Clm4DILI.js">
+    <link rel="modulepreload" crossorigin href="./assets/charts-D2wa4hUN.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-CPxWOabL.css">
+  </head>
+  <body class="bg-[#12110c] text-stone-100 antialiased selection:bg-[#FF9100]/30 selection:text-[#FF9100]">
+    <div id="root"></div>
+  </body>
+</html>
+
