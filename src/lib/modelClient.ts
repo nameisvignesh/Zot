@@ -140,19 +140,16 @@ const normalizeModelId = (model: Model) => {
 
 const toChatMessages = (messages: ChatTurn[]) => messages.map(({ role, content }) => ({ role, content }));
 
-const toOllamaMessages = (messages: ChatTurn[]) => {
+const toOllamaMessages = (messages: ChatTurn[], isRefinement: boolean) => {
   const turns = toChatMessages(messages);
-  const outputOnlyInstruction = 'Return only the final user-facing answer. Do not include analysis, private reasoning, drafts, or <think> tags.';
-  const systemTurn = turns.find(turn => turn.role === 'system');
-  if (systemTurn) systemTurn.content = `${systemTurn.content}\n\n${outputOnlyInstruction}`;
-  else turns.unshift({ role: 'system', content: outputOnlyInstruction });
+  const userTurn = !isRefinement ? turns.find(turn => turn.role === 'user') : undefined;
+  if (userTurn) userTurn.content = `Give only a direct concise answer, no reasoning: ${userTurn.content}`;
   return turns;
 };
 
-const toOllamaPrompt = (messages: ChatTurn[]) => [
-  'System: Return only the final user-facing answer. Do not include analysis, private reasoning, drafts, or <think> tags.',
-  ...messages.map(message => `${message.role}: ${message.content}`),
-].join('\n\n');
+const toOllamaPrompt = (messages: ChatTurn[], isRefinement: boolean) => toOllamaMessages(messages, isRefinement)
+  .map(message => `${message.role}: ${message.content}`)
+  .join('\n\n');
 
 export const requestModelChat = async (
   model: Model,
@@ -229,9 +226,9 @@ export const requestModelChat = async (
       : isHuggingFaceInference
       ? { inputs: messages.map(message => `${message.role}: ${message.content}`).join('\n'), parameters: { max_new_tokens: maxOutputTokens, temperature: 0.2 }, options: { wait_for_model: true } }
       : isOllamaChat
-      ? { model: requestModelId, messages: toOllamaMessages(messages), stream: false, ...(isRefinement ? { think: false, format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: ollamaNumPredict, num_ctx: contextLength, num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
+      ? { model: requestModelId, messages: toOllamaMessages(messages, isRefinement), stream: false, think: false, ...(isRefinement ? { format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: isRefinement ? 0.1 : 0, num_predict: ollamaNumPredict, num_ctx: contextLength, num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOllamaGenerate
-      ? { model: requestModelId, prompt: toOllamaPrompt(messages), stream: false, ...(isRefinement ? { think: false, format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: 0.1, num_predict: ollamaNumPredict, num_ctx: contextLength, num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
+      ? { model: requestModelId, prompt: toOllamaPrompt(messages, isRefinement), stream: false, think: false, ...(isRefinement ? { format: ollamaRefinementFormat } : {}), keep_alive: '2m', options: { temperature: isRefinement ? 0.1 : 0, num_predict: ollamaNumPredict, num_ctx: contextLength, num_batch: 64, ...(isRefinement ? { repeat_penalty: 1.1, top_k: 50 } : {}) } }
       : isOpenAIResponses
       ? { model: requestModelId, input: messages.map(message => ({ role: message.role, content: [{ type: 'input_text', text: message.content }] })), max_output_tokens: maxOutputTokens, temperature: 0.2 }
       : { model: requestModelId, messages, max_tokens: maxOutputTokens, temperature: 0.2, stream: false };
@@ -246,7 +243,7 @@ export const requestModelChat = async (
     let response = await fetchWithBody(activeBody);
     if (!response.ok) {
       const detail = await errorMessage(response);
-      if ((isOllamaChat || isOllamaGenerate) && isRefinement && /\bthink(?:ing)?\b.*(?:unsupported|not supported|invalid|unknown)|(?:unsupported|not supported|invalid|unknown).*\bthink(?:ing)?\b/i.test(detail)) {
+      if ((isOllamaChat || isOllamaGenerate) && /\bthink(?:ing)?\b.*(?:unsupported|not supported|invalid|unknown)|(?:unsupported|not supported|invalid|unknown).*\bthink(?:ing)?\b/i.test(detail)) {
         const compatibilityBody = { ...activeBody };
         delete compatibilityBody.think;
         activeBody = compatibilityBody;

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, Grid2X2, List, Pencil, Route, Send, Trash2, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Grid2X2, List, Pencil, RefreshCw, Route, Send, Trash2, X } from 'lucide-react';
 import { useZot } from '../../context/ZotContext';
 import { routePrompt } from '../../lib/routingEngine';
 import { Model, RequestRecord } from '../../types';
@@ -51,18 +51,35 @@ export const RoutingView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPromptOpen]);
 
-  const handleRoute = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!prompt.trim() || isExecuting || !selectedModel) return;
+  const submitPrompt = async (promptText: string, modelId?: string) => {
+    if (!promptText.trim() || isExecuting) return;
     setRouteError('');
     try {
-      const record = await runInference({ prompt, refine: false, preferredModelId: preferredModel === 'auto' ? undefined : preferredModel });
+      const record = await runInference({
+        prompt: promptText,
+        refine: false,
+        preferredModelId: modelId ?? (preferredModel === 'auto' ? undefined : preferredModel),
+      });
       setRoutedRecord(record);
       sessionStorage.setItem('zot-route-record', JSON.stringify(record));
       if (record.status === 'error') setRouteError(record.error_message || 'The selected model could not complete the request.');
     } catch (error) {
       setRouteError(error instanceof Error ? error.message : 'Unable to route this prompt.');
     }
+  };
+
+  const handleRoute = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedModel) return;
+    await submitPrompt(prompt);
+  };
+
+  const retryRoute = () => {
+    if (!routedRecord || isExecuting) return;
+    const retryPrompt = routedRecord.original_prompt;
+    setPrompt(retryPrompt);
+    sessionStorage.setItem('zot-route-prompt', retryPrompt);
+    void submitPrompt(retryPrompt, routedRecord.model_id);
   };
 
   const copyOutput = async () => {
@@ -103,7 +120,7 @@ export const RoutingView: React.FC = () => {
         </div>
       </div>
 
-      {routeError && <div className="alert">{routeError}</div>}
+      {routeError && !(routedRecord?.status === 'error' && routedRecord.error_message === routeError) && <div className="alert">{routeError}</div>}
 
       <div className="panel">
         <form className="panel-body space-y-4" onSubmit={handleRoute}>
@@ -135,7 +152,7 @@ export const RoutingView: React.FC = () => {
 
       {routedRecord && (
         <div className="panel">
-          <div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Check size={15} className="text-emerald-400" /> {t('routing.lastDecision')}</div><div className="panel-subtitle">{routedRecord.status === 'error' ? 'Request failed' : `Response from ${routedRecord.model_name}`}</div></div><div className="flex items-center gap-2"><span className={routedRecord.status === 'error' ? 'badge warn' : 'badge success'}>{routedRecord.status}</span><button className="button" onClick={() => void copyOutput()} disabled={routedRecord.status === 'success' && !routedRecord.response_text}><Copy size={14} /> {copiedOutput ? 'Copied' : 'Copy output'}</button></div></div>
+          <div className="panel-header"><div><div className="panel-title flex items-center gap-2"><Check size={15} className="text-emerald-400" /> {t('routing.lastDecision')}</div><div className="panel-subtitle">{routedRecord.status === 'error' ? 'Request failed' : `Response from ${routedRecord.model_name}`}</div></div><div className="flex items-center gap-2"><span className={routedRecord.status === 'error' ? 'badge warn' : 'badge success'}>{routedRecord.status}</span>{routedRecord.status === 'error' && <button className="button" onClick={retryRoute} disabled={isExecuting}><RefreshCw size={14} /> Retry</button>}<button className="button" onClick={() => void copyOutput()} disabled={routedRecord.status === 'success' && !routedRecord.response_text}><Copy size={14} /> {copiedOutput ? 'Copied' : 'Copy output'}</button></div></div>
           <div className="panel-body"><pre className={`routing-output ${routedRecord.status === 'error' ? 'routing-output-error' : ''}`}>{routedRecord.status === 'error' ? routedRecord.error_message : routedRecord.response_text}</pre></div>
           <div className="panel-body grid-3"><div><div className="metric-label">{t('routing.task')}</div><strong>{routedRecord.task_type}</strong></div><div><div className="metric-label">{t('routing.selectedModel')}</div><strong className="accent">{routedRecord.model_name}</strong></div><div><div className="metric-label">Prompt used</div><button type="button" className="button px-3 py-1.5 text-xs" onClick={() => { setCopiedPrompt(false); setIsPromptOpen(true); }}>User Input</button></div></div>
         </div>
