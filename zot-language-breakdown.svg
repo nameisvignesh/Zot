@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="210" viewBox="0 0 760 210" role="img" aria-labelledby="title description">
+  <title id="title">ZOT source language breakdown</title>
+  <desc id="description">TypeScript 92.35 percent, CSS 7.06 percent, and HTML 0.59 percent, based on GitHub Linguist's tracked source byte counts.</desc>
+  <rect width="760" height="210" rx="18" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="28" y="38" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="18" font-weight="700">Source language breakdown</text>
+  <text x="28" y="59" fill="#59636e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12">GitHub Linguist · tracked source bytes</text>
+  <clipPath id="bar-round"><rect x="28" y="78" width="704" height="26" rx="13"/></clipPath>
+  <g clip-path="url(#bar-round)">
+    <rect x="28" y="78" width="650.144" height="26" fill="#3178c6"/>
+    <rect x="678.144" y="78" width="49.702" height="26" fill="#6f42c1"/>
+    <rect x="727.846" y="78" width="4.154" height="26" fill="#e34c26"/>
+  </g>
+  <circle cx="37" cy="137" r="5" fill="#3178c6"/>
+  <text x="50" y="141" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" font-weight="650">TypeScript</text>
+  <text x="50" y="164" fill="#59636e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12">256,059 bytes</text>
+  <text x="50" y="190" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15" font-weight="700">92.35%</text>
+  <circle cx="291" cy="137" r="5" fill="#6f42c1"/>
+  <text x="304" y="141" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" font-weight="650">CSS</text>
+  <text x="304" y="164" fill="#59636e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12">19,582 bytes</text>
+  <text x="304" y="190" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15" font-weight="700">7.06%</text>
+  <circle cx="535" cy="137" r="5" fill="#e34c26"/>
+  <text x="548" y="141" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" font-weight="650">HTML</text>
+  <text x="548" y="164" fill="#59636e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="12">1,624 bytes</text>
+  <text x="548" y="190" fill="#1f2328" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15" font-weight="700">0.59%</text>
+</svg>
