@@ -34,6 +34,7 @@ export const discoverProviderModels = async (provider: string, endpoint: string,
     url = `${base}/v1/models`;
     headers = { ...headers, Authorization: `Bearer ${apiKey}` };
   }
+  url = throughNvidiaDevProxy(url);
 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -53,7 +54,12 @@ export const discoverProviderModels = async (provider: string, endpoint: string,
     return models;
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Model discovery timed out.');
-    if (error instanceof TypeError) throw new Error('Could not reach the provider model list. Check the endpoint and browser CORS access.');
+    if (error instanceof TypeError) {
+      if (isNvidiaNim(provider, endpoint) && import.meta.env.DEV) {
+        throw new Error('Could not reach NVIDIA NIM through the Vite development proxy. Restart the Vite server and check your network connection.');
+      }
+      throw new Error('Could not reach the provider model list. Check the endpoint and browser CORS access.');
+    }
     throw error;
   } finally {
     window.clearTimeout(timer);
@@ -112,6 +118,16 @@ const errorMessage = async (response: Response) => {
 };
 
 export const normalizeModelEndpoint = (endpoint: string) => endpoint.trim();
+
+const isNvidiaNim = (provider: string, endpoint: string) =>
+  provider.toLowerCase().includes('nvidia') || /integrate\.api\.nvidia\.com/i.test(endpoint);
+
+const throughNvidiaDevProxy = (url: string) => {
+  if (!import.meta.env.DEV) return url;
+  const target = new URL(url, window.location.origin);
+  if (target.origin !== 'https://integrate.api.nvidia.com') return url;
+  return `/api/nvidia-nim${target.pathname}${target.search}`;
+};
 
 const resolveModelRequestEndpoint = (endpoint: string, provider: string) => {
   const clean = normalizeModelEndpoint(endpoint).replace(/\/+$/, '');
@@ -179,9 +195,9 @@ export const requestModelChat = async (
   const googleModelId = normalizeModelId(model);
   const requestModelId = model.id.startsWith('public:') ? model.id.slice('public:'.length) : model.id;
   const googleBase = endpoint.includes('/v1beta') ? `${endpoint.split('/v1beta')[0]}/v1beta` : endpoint;
-  const requestEndpoint = useGoogleNativeApi
+  const requestEndpoint = throughNvidiaDevProxy(useGoogleNativeApi
     ? `${googleBase}/models/${googleModelId}:generateContent?key=${encodeURIComponent(model.api_key)}`
-    : resolveModelRequestEndpoint(endpoint, model.provider);
+    : resolveModelRequestEndpoint(endpoint, model.provider));
   const contextLength = isOllamaChat || isOllamaGenerate
     ? Math.min(model.context_length || 4096, 4096)
     : model.context_length || 16384;
@@ -347,8 +363,10 @@ export const requestModelChat = async (
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw new Error(model.type === 'local' ? 'The local model did not finish within 3 minutes. On low-memory devices, try a smaller quantized model, reduce the prompt length, and close other memory-heavy apps.' : 'The model request timed out. Check the provider status and try again.');
     if (error instanceof TypeError) {
-      if (provider.includes('nvidia')) {
-        throw new Error('NVIDIA NIM blocks this browser-origin request (CORS). The endpoint is reachable, but this static app needs a trusted server-side proxy to call it.');
+      if (isNvidiaNim(provider, endpoint)) {
+        throw new Error(import.meta.env.DEV
+          ? 'Could not reach the NVIDIA NIM development proxy. Restart the Vite server and check your network connection.'
+          : 'NVIDIA NIM cannot be reached directly from this browser. Use a trusted server-side proxy for this deployment.');
       }
       throw new Error('The browser could not reach the model endpoint. This may be caused by provider CORS restrictions or a network/endpoint issue. Check that the provider allows requests from this browser origin.');
     }

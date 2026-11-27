@@ -16,6 +16,13 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     hmr: process.env.DISABLE_HMR !== 'true',
+    proxy: {
+      '/api/nvidia-nim': {
+        target: 'https://integrate.api.nvidia.com',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/nvidia-nim/, ''),
+      },
+    },
   },
   preview: {
     port: 4173,

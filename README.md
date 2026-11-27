@@ -42,7 +42,7 @@ ZOT is a browser-based workspace for routing prompts to local or hosted language
 
 </div>
 
-> **Hosted model requests are sent directly from your browser.** Some providers block browser requests through CORS and require a trusted server-side proxy. ZOT does not include a proxy.
+> **Hosted model requests are usually sent directly from your browser.** For local development, ZOT includes a fixed NVIDIA NIM proxy in the Vite dev server. Other providers that block browser requests through CORS, and all static production deployments, require a trusted server-side proxy.
 
 ## Quick Start
 
@@ -119,7 +119,9 @@ Use your NIM API key and a model ID available to that key. Set the endpoint to:
 https://integrate.api.nvidia.com/v1
 ```
 
-ZOT adds `/chat/completions` to the base URL. If NVIDIA NIM blocks browser-origin requests, use a trusted server-side proxy; do not disable browser security.
+ZOT adds `/chat/completions` to the base URL. During `npm run dev`, requests to `integrate.api.nvidia.com` are forwarded through a fixed Vite development proxy, which also allows model discovery without browser CORS errors. The API key remains in browser storage and is sent only in the request's authorization header; it is not embedded in source code or stored by the proxy.
+
+The development proxy is not included in production builds. Static hosting such as GitHub Pages cannot securely proxy provider requests, so production deployments must use a trusted server-side proxy if NVIDIA NIM blocks the browser origin. Do not disable browser security.
 
 ## Privacy and Security
 
